@@ -4,6 +4,7 @@
 #include "core/formula.h"
 #include "core/macro.h"
 #include "fonts/fonts.h"
+#include "utils/log.h"
 #if CLATEX_CXX17
 #include <filesystem>
 #endif
@@ -93,6 +94,13 @@ string LaTeX::queryResourceLocation(string& custom_path) {
 }
 
 void LaTeX::init(string res_root_path) {
+  // On embedded targets we typically don't have a host filesystem layout
+  // nor environment variables. Treat the provided path as authoritative.
+#if defined(ARDUINO) || defined(MICROTEX_EMBEDDED)
+  if (!res_root_path.empty()) {
+    RES_BASE = res_root_path;
+  }
+#else
   try {
     auto path = queryResourceLocation(res_root_path);
     if (!path.empty()) {
@@ -100,6 +108,7 @@ void LaTeX::init(string res_root_path) {
     }
   } catch (std::exception&) {
   }
+#endif
   if (_formula != nullptr) return;
 
   NewCommandMacro::_init_();
@@ -131,19 +140,50 @@ void LaTeX::setDebug(bool debug) {
 }
 
 TeXRender* LaTeX::parse(const wstring& latex, int width, float textSize, float lineSpace, color fg) {
-  bool lined = true;
-  if (startswith(latex, L"$$") || startswith(latex, L"\\[")) {
-    lined = false;
+  try {
+#ifndef MICROTEX_TRACE_PARSE
+#define MICROTEX_TRACE_PARSE 1
+#endif
+#if MICROTEX_TRACE_PARSE
+  __print("[MicroTeX] LaTeX::parse: start\n");
+#endif
+    bool lined = true;
+    if (startswith(latex, L"$$") || startswith(latex, L"\\[")) {
+      lined = false;
+    }
+    Alignment align = lined ? Alignment::left : Alignment::center;
+
+#if MICROTEX_TRACE_PARSE
+  __print("[MicroTeX] LaTeX::parse: setLaTeX\n");
+#endif
+    _formula->setLaTeX(latex);
+
+#if MICROTEX_TRACE_PARSE
+  __print("[MicroTeX] LaTeX::parse: build render\n");
+#endif
+    TeXRender* render =
+      _builder->setStyle(TexStyle::display)
+        .setTextSize(textSize)
+        .setWidth(UnitType::pixel, width, align)
+        .setIsMaxWidth(lined)
+        .setLineSpace(UnitType::pixel, lineSpace)
+        .setForeground(fg)
+        .build(*_formula);
+#if MICROTEX_TRACE_PARSE
+  __print("[MicroTeX] LaTeX::parse: done\n");
+#endif
+    return render;
+  } catch (const std::exception& e) {
+    // On embedded targets, uncaught exceptions often look like a hard hang.
+    // Returning nullptr lets user code surface the error and continue.
+#if MICROTEX_TRACE_PARSE
+  __print("[MicroTeX] LaTeX::parse: caught std::exception: %s\n", e.what());
+#endif
+    return nullptr;
+  } catch (...) {
+#if MICROTEX_TRACE_PARSE
+  __print("[MicroTeX] LaTeX::parse: caught unknown exception\n");
+#endif
+    return nullptr;
   }
-  Alignment align = lined ? Alignment::left : Alignment::center;
-  _formula->setLaTeX(latex);
-  TeXRender* render =
-    _builder->setStyle(TexStyle::display)
-      .setTextSize(textSize)
-      .setWidth(UnitType::pixel, width, align)
-      .setIsMaxWidth(lined)
-      .setLineSpace(UnitType::pixel, lineSpace)
-      .setForeground(fg)
-      .build(*_formula);
-  return render;
 }

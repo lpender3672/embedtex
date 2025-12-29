@@ -66,7 +66,14 @@ void SymbolAtom::addSymbolAtom(const sptr<SymbolAtom>& sym) {
 
 sptr<SymbolAtom> SymbolAtom::get(const string& name) {
   auto it = _symbols.find(name);
-  if (it == _symbols.end()) throw ex_symbol_not_found(name);
+  if (it == _symbols.end()) {
+#if defined(ARDUINO) && !defined(MICROTEX_USE_EXCEPTIONS)
+    __print("[MicroTeX] SymbolAtom::get missing '%s'\n", name.c_str());
+    return sptr<SymbolAtom>(nullptr);
+#else
+    throw ex_symbol_not_found(name);
+#endif
+  }
   return it->second;
 }
 

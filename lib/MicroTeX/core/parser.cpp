@@ -415,6 +415,53 @@ void TeXParser::getOptsArgs(int argc, int opts, Args& args) {
   // the last (maximum to 12th) value is reserved for returned value
   args.resize(argc + 10 + 1 + 1);
 
+#if defined(ARDUINO) && !defined(MICROTEX_USE_EXCEPTIONS)
+  auto getOptsNoThrow = [&]() {
+    for (int j = argc + 1; j < argc + 11; j++) {
+      skipWhiteSpace();
+      if (_pos >= _len || _latex[_pos] != L_BRACK) {
+        args[j] = L"";
+        // If there's no '[' immediately, there are no more options.
+        break;
+      }
+      // Consume a balanced [ ... ] group.
+      args[j] = getGroup(L_BRACK, R_BRACK);
+    }
+  };
+
+  auto getArgNoThrow = [&](int i) {
+    skipWhiteSpace();
+    if (_pos >= _len) {
+      args[i] = L"";
+      return;
+    }
+
+    const wchar_t ch = _latex[_pos];
+    if (ch == L_GROUP) {
+      args[i] = getGroup(L_GROUP, R_GROUP);
+      return;
+    }
+    if (ch != ESCAPE) {
+      args[i] = towstring(ch);
+      _pos++;
+      return;
+    }
+    // ESCAPE: parse a command (including its own args)
+    args[i] = getCommandWithArgs(getCommand());
+  };
+
+  if (argc != 0) {
+    if (opts == 1) getOptsNoThrow();
+    getArgNoThrow(1);
+    if (opts == 2) getOptsNoThrow();
+    for (int i = 2; i <= argc; i++) {
+      getArgNoThrow(i);
+    }
+    if (_isMathMode) skipWhiteSpace();
+  }
+  return;
+#endif
+
   auto getOpts = [&]() {
     int j = argc + 1;
     try {
@@ -479,12 +526,35 @@ sptr<Atom> TeXParser::processEscape() {
 
   if (command.length() == 0) return sptrOf<EmptyAtom>();
 
+#if defined(ARDUINO)
+#ifndef MICROTEX_TRACE_ESCAPE
+#define MICROTEX_TRACE_ESCAPE 1
+#endif
+#if MICROTEX_TRACE_ESCAPE
+  if (_len <= 16) {
+    __print("[MicroTeX] processEscape cmd='%s' pos=%d/%d\n", wide2utf8(command).c_str(), _spos, _len);
+  }
+#endif
+#endif
+
   auto mac = MacroInfo::get(command);
   if (mac != nullptr) {
     return processCommands(command, mac);
   }
 
   const string cmd = wide2utf8(command);
+
+#if defined(ARDUINO) && !defined(MICROTEX_USE_EXCEPTIONS)
+  auto f = Formula::get(command);
+  if (f != nullptr) return f->_root;
+  auto sym = SymbolAtom::get(cmd);
+  if (sym != nullptr) return sym;
+
+  // Not a valid command/symbol/predefined formula. Avoid throwing on embedded.
+  __print("[MicroTeX] Unknown command/symbol '%s'\n", cmd.c_str());
+  auto rm = sptrOf<RomanAtom>(Formula(L"\\backslash " + command)._root);
+  return sptrOf<ColorAtom>(rm, TRANSPARENT, RED);
+#else
   try {
     return Formula::get(command)->_root;
   } catch (ex_formula_not_found& e) {
@@ -500,6 +570,7 @@ sptr<Atom> TeXParser::processEscape() {
   // Show invalid command
   auto rm = sptrOf<RomanAtom>(Formula(L"\\backslash " + command)._root);
   return sptrOf<ColorAtom>(rm, TRANSPARENT, RED);
+#endif
 }
 
 sptr<Atom> TeXParser::processCommands(const wstring& cmd, MacroInfo* mac) {
@@ -789,8 +860,53 @@ void TeXParser::parse() {
     return;
   }
 
+#ifndef MICROTEX_TRACE_PARSER
+#define MICROTEX_TRACE_PARSER 1
+#endif
+#if MICROTEX_TRACE_PARSER
+#define MTX_TRACELN(msg) do { __print("%s\n", msg); } while (0)
+#define MTX_TRACEF(fmt, ...) do { __print((fmt), ##__VA_ARGS__); } while (0)
+#else
+#define MTX_TRACELN(msg) do {} while (0)
+#define MTX_TRACEF(fmt, ...) do {} while (0)
+#endif
+
+#if MICROTEX_TRACE_PARSER
+  MTX_TRACEF("[MicroTeX] TeXParser::parse enter len=%d\n", _len);
+#endif
+
+  int lastPos = -1;
+  uint32_t stallCount = 0;
+  uint32_t iterCount = 0;
+
   wchar_t ch;
   while (_pos < _len) {
+    iterCount++;
+
+    if (_pos == lastPos) {
+      stallCount++;
+      if ((stallCount % 256u) == 0u) {
+    #if MICROTEX_TRACE_PARSER
+      const uint16_t code = static_cast<uint16_t>(_latex[_pos]);
+      MTX_TRACEF("[MicroTeX] TeXParser stalled pos=%d char=0x%04X stalls=%lu\n", _pos, code, static_cast<unsigned long>(stallCount));
+    #endif
+      }
+      // If we spin without advancing for too long, abort with a diagnostic.
+      if (stallCount > 5000u) {
+        throw ex_parse("TeXParser stalled (pos not advancing)" );
+      }
+    } else {
+      stallCount = 0;
+      lastPos = _pos;
+    }
+
+#if MICROTEX_TRACE_PARSER
+    if ((iterCount % 2048u) == 0u) {
+      const uint16_t code = static_cast<uint16_t>(_latex[_pos]);
+      MTX_TRACEF("[MicroTeX] TeXParser progress pos=%d/%d char=0x%04X\n", _pos, _len, code);
+    }
+#endif
+
     ch = _latex[_pos];
 
     switch (ch) {

@@ -3,6 +3,7 @@
 #include <cstring>
 #include <algorithm>
 #include <Arduino.h>
+#include "common.h"
 
 namespace tex {
 
@@ -92,10 +93,36 @@ void Graphics2D_tft::ensureFontLoaded() {
     std::string file = _font->getFile();
     if (file.empty() || file == _currentFontFile) return;
     
-    // Ensure leading slash for SD card
+    // Build SD path relative to MicroTeX resource root.
+    // Font definitions can vary:
+    //   - "fonts/..." (preferred, relative to RES_BASE)
+    //   - "res/fonts/..." (legacy, already includes default RES_BASE)
+    // Avoid producing duplicated roots like "/res/res/fonts/...".
+    std::string base = tex::RES_BASE;
+    if (!base.empty()) {
+        if (base[0] != '/') base = "/" + base;
+        while (base.size() > 1 && base.back() == '/') base.pop_back();
+    }
+    std::string baseNoSlash = base;
+    if (!baseNoSlash.empty() && baseNoSlash[0] == '/') baseNoSlash.erase(0, 1);
+
     std::string sdPath = file;
-    if (sdPath[0] != '/') {
-        sdPath = "/" + sdPath;
+    if (!sdPath.empty() && sdPath[0] != '/') {
+        // Relative path. If it already begins with RES_BASE (e.g. "res/fonts/..."),
+        // treat it as already rooted.
+        const bool alreadyRooted = (!baseNoSlash.empty() &&
+                                   (sdPath == baseNoSlash ||
+                                    sdPath.rfind(baseNoSlash + "/", 0) == 0));
+        if (alreadyRooted) {
+            sdPath = "/" + sdPath;
+        } else if (!base.empty()) {
+            sdPath = base + "/" + sdPath;
+        } else {
+            sdPath = "/" + sdPath;
+        }
+    } else {
+        // Absolute path. If it's already under RES_BASE, keep; otherwise we leave it
+        // untouched because caller explicitly provided an absolute path.
     }
     
     Serial.printf("Loading font: %s\n", sdPath.c_str());
@@ -116,35 +143,20 @@ void Graphics2D_tft::ensureFontMetrics(unsigned int fontSizePx) {
     if (fontSizePx == 0) fontSizePx = 1;
     if (fontSizePx == _currentFontSizePx && _currentAscentPx > 0) return;
 
-    // OpenFontRender's public API does not expose ascender directly.
-    // Derive an ascent in pixels using its own bounding boxes.
+    // OpenFontRender does not expose ascender/descender publicly.
+    // For Align::TopLeft, its internal baseline is computed as (y + ascender).
+    // We therefore need a reasonable ascender estimate in pixels.
     //
-    // For Align::BottomLeft at (0,0), OpenFontRender internally shifts baseline using descender.
-    // This lets us recover a consistent height and ascent approximation.
-    const char* probe = "Hg"; // includes ascender+descender in most Latin fonts
-    const FT_BBox bottom = _ofr->calculateBoundingBox(0, 0, fontSizePx, Align::BottomLeft, Layout::Horizontal, probe);
+    // IMPORTANT: Do NOT use the full line height (ascender - descender) as ascender,
+    // otherwise glyphs are shifted upward by roughly |descender| and TeX rule lines
+    // (fraction bar, sqrt overbar) appear too low.
+    const char* probe = "Hg"; // tends to exercise ascender+descender
     const FT_BBox top = _ofr->calculateBoundingBox(0, 0, fontSizePx, Align::TopLeft, Layout::Horizontal, probe);
+    const int32_t height = std::abs(static_cast<int32_t>(top.yMax - top.yMin));
 
-    const int32_t bottomHeight = std::abs(static_cast<int32_t>(bottom.yMax - bottom.yMin));
-    const int32_t topHeight = std::abs(static_cast<int32_t>(top.yMax - top.yMin));
-    const int32_t height = (bottomHeight > 0) ? bottomHeight : topHeight;
-
-    // A reasonable default if the bbox math ends up odd for a given font.
-    int32_t ascent = (height > 0) ? (height * 8) / 10 : static_cast<int32_t>(fontSizePx);
-
-    // Try to compute ascent from bottom-aligned bbox shape.
-    // With the library's internal math, bottom.yMin tends to be roughly (-height).
-    if (bottomHeight > 0) {
-        const int32_t hFromBottom = -static_cast<int32_t>(bottom.yMin);
-        if (hFromBottom > 0 && hFromBottom < 4096) {
-            // In typical coordinate conventions, descender is ~ (bottom.yMax / 2).
-            const int32_t desc = static_cast<int32_t>(bottom.yMax) / 2;
-            const int32_t ascCandidate = hFromBottom + desc;
-            if (ascCandidate > 0 && ascCandidate < 4096) {
-                ascent = ascCandidate;
-            }
-        }
-    }
+    // Typical fonts have ascender around 70–85% of line height.
+    int32_t ascent = (height > 0) ? (height * 4) / 5 : static_cast<int32_t>(fontSizePx);
+    if (ascent <= 0) ascent = static_cast<int32_t>(fontSizePx);
 
     _currentFontSizePx = fontSizePx;
     _currentAscentPx = ascent;
@@ -275,6 +287,27 @@ void Graphics2D_tft::drawLine(float x1, float y1, float x2, float y2) {
     int py2 = static_cast<int>((y2 * _sy) + _ty);
     uint16_t col = colorTo565(_color);
 
+    // Respect stroke width for TeX rules (fraction bar, sqrt overbar, etc.).
+    // These are overwhelmingly axis-aligned lines.
+    const float lw = _stroke.lineWidth;
+    if (py1 == py2) {
+        const int tPx = std::max(1, static_cast<int>(std::lround(std::abs(lw * _sy))));
+        const int xMin = std::min(px1, px2);
+        const int xMax = std::max(px1, px2);
+        const int yTop = py1 - (tPx / 2);
+        _tft->fillRect(xMin, yTop, (xMax - xMin + 1), tPx, col);
+        return;
+    }
+    if (px1 == px2) {
+        const int tPx = std::max(1, static_cast<int>(std::lround(std::abs(lw * _sx))));
+        const int yMin = std::min(py1, py2);
+        const int yMax = std::max(py1, py2);
+        const int xLeft = px1 - (tPx / 2);
+        _tft->fillRect(xLeft, yMin, tPx, (yMax - yMin + 1), col);
+        return;
+    }
+
+    // Fallback: TFT_eSPI only draws 1px lines.
     _tft->drawLine(px1, py1, px2, py2, col);
 }
 

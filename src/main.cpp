@@ -63,7 +63,7 @@ void setup() {
     
     // Convert the code to a paintable object (TeXRender)
     auto render = LaTeX::parse(
-         L"\\text{Hello world}",   // LaTeX code to parse
+         L"\\sqrt{\\lambda + 12 \\cdot 5}",   // LaTeX code to parse
         TFT_WIDTH,    // logical width of the graphics context (in pixel)
         32,     // font size (in point)
         16,     // space between 2 lines (in pixel)
@@ -77,7 +77,7 @@ void setup() {
         ofr.setSerial(Serial);
         ofr.setDrawer(tft);
         Graphics2D_tft g2d(&tft, &ofr);
-        render->draw(g2d, 100, 50);  // Draw at position (0, 0)
+        render->draw(g2d, 100, 100);  // Draw at position (0, 0)
     } else {
         Serial.println("Failed to parse LaTeX");
     }
