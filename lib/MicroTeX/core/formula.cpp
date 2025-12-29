@@ -45,8 +45,11 @@ Formula::Formula(
   _textStyle = textStyle;
   _xmlMap = tp._formula->_xmlMap;
   if (tp.isPartial()) {
-    _parser.parse();
-    if (_root == nullptr) _root = sptrOf<EmptyAtom>();
+    try {
+      _parser.parse();
+    } catch (exception& e) {
+      if (_root == nullptr) _root = sptrOf<EmptyAtom>();
+    }
   } else {
     _parser.parse();
   }
@@ -57,7 +60,9 @@ Formula::Formula(const TeXParser& tp, const wstring& latex, bool preprocess)
   _textStyle = "";
   _xmlMap = tp._formula->_xmlMap;
   if (tp.isPartial()) {
-    _parser.parse();
+    try {
+      _parser.parse();
+    } catch (exception& e) {}
   } else {
     _parser.parse();
   }
@@ -68,8 +73,11 @@ Formula::Formula(const TeXParser& tp, const wstring& latex)
   _textStyle = "";
   _xmlMap = tp._formula->_xmlMap;
   if (tp.isPartial()) {
-    _parser.parse();
-    if (_root == nullptr) _root = sptrOf<EmptyAtom>();
+    try {
+      _parser.parse();
+    } catch (exception& e) {
+      if (_root == nullptr) _root = sptrOf<EmptyAtom>();
+    }
   } else {
     _parser.parse();
   }
@@ -94,20 +102,18 @@ void Formula::setLaTeX(const wstring& latex) {
 
 Formula* Formula::add(const sptr<Atom>& a) {
   if (a == nullptr) return this;
-  if (a->kind() == AtomKind::Middle) {
-    _middle.push_back(static_pointer_cast<MiddleAtom>(a));
-  }
+  auto atom = dynamic_pointer_cast<MiddleAtom>(a);
+  if (atom != nullptr) _middle.push_back(atom);
   if (_root == nullptr) {
     _root = a;
     return this;
   }
-  if (_root->kind() != AtomKind::Row) {
-    _root = sptrOf<RowAtom>(_root);
-  }
-  auto* rm = static_cast<RowAtom*>(_root.get());
+  auto* rm = dynamic_cast<RowAtom*>(_root.get());
+  if (rm == nullptr) _root = sptrOf<RowAtom>(_root);
+  rm = static_cast<RowAtom*>(_root.get());
   rm->add(a);
-  if (a->kind() == AtomKind::Typed) {
-    auto* ta = static_cast<TypedAtom*>(a.get());
+  auto* ta = dynamic_cast<TypedAtom*>(a.get());
+  if (ta != nullptr) {
     AtomType rt = ta->rightType();
     if (rt == AtomType::binaryOperator || rt == AtomType::relation) {
       rm->add(sptrOf<BreakMarkAtom>());
@@ -132,9 +138,10 @@ sptr<Formula> Formula::get(const wstring& name) {
   if (it == _predefinedTeXFormulas.end()) {
     auto i = _predefinedTeXFormulasAsString.find(name);
     if (i == _predefinedTeXFormulasAsString.end())
-      return nullptr; // Formula not found
+      throw ex_formula_not_found(wide2utf8(name));
     auto tf = sptrOf<Formula>(i->second);
-    if (tf->_root->kind() != AtomKind::Row) {
+    auto* ra = dynamic_cast<RowAtom*>(tf->_root.get());
+    if (ra == nullptr) {
       _predefinedTeXFormulas[name] = tf;
     }
     return tf;

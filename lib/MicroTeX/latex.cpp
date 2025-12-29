@@ -4,7 +4,7 @@
 #include "core/formula.h"
 #include "core/macro.h"
 #include "fonts/fonts.h"
-#if CLATEX_CXX17 && !defined(MICROTEX_EMBEDDED)
+#if CLATEX_CXX17
 #include <filesystem>
 #endif
 
@@ -62,7 +62,7 @@ string LaTeX::queryResourceLocation(string& custom_path) {
   // goes through the list of potential paths. if it finds a path that contains
   // .clatexmath-res_root, it returns it. Otherwise return an empty string.
   while (!paths.empty()) {
-#if CLATEX_CXX17 && !defined(MICROTEX_EMBEDDED)
+#if CLATEX_CXX17
     filesystem::path p = paths.front();
     p.append(CHECK_FILE);
     if (filesystem::exists(p)) {
@@ -93,9 +93,12 @@ string LaTeX::queryResourceLocation(string& custom_path) {
 }
 
 void LaTeX::init(string res_root_path) {
-  auto path = queryResourceLocation(res_root_path);
-  if (!path.empty()) {
-    RES_BASE = path;
+  try {
+    auto path = queryResourceLocation(res_root_path);
+    if (!path.empty()) {
+      RES_BASE = path;
+    }
+  } catch (std::exception&) {
   }
   if (_formula != nullptr) return;
 

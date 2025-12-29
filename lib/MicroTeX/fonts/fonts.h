@@ -37,7 +37,7 @@ private:
   static std::map<std::string, float> _generalSettings;
   static bool _magnificationEnable;
 
-  float _size, _factor;
+  float _factor, _size;
 
   Char getChar(wchar_t c, const std::vector<CharFont*>& cf, TexStyle style);
 
@@ -193,7 +193,7 @@ public:
   inline float getSkew(const CharFont& cf, TexStyle style) override {
     FontInfo* info = getInfo(cf.fontId);
     wchar_t skew = info->getSkewChar();
-    if (skew == (wchar_t)-1) return 0;
+    if (skew == -1) return 0;
     return getKern(cf, CharFont(skew, cf.fontId), style);
   }
 

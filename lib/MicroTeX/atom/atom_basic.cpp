@@ -48,17 +48,15 @@ sptr<Box> HlineAtom::createBox(Environment& env) {
 CumulativeScriptsAtom::CumulativeScriptsAtom(
   const sptr<Atom>& base, const sptr<Atom>& sub, const sptr<Atom>& sup
 ) {
-  CumulativeScriptsAtom* ca = nullptr;
+  auto* ca = dynamic_cast<CumulativeScriptsAtom*>(base.get());
   ScriptsAtom* sa = nullptr;
-  if (base->kind() == AtomKind::CumulativeScripts) {
-    ca = static_cast<CumulativeScriptsAtom*>(base.get());
+  if (ca != nullptr) {
     _base = ca->_base;
     ca->_sup->add(sup);
     ca->_sub->add(sub);
     _sup = ca->_sup;
     _sub = ca->_sub;
-  } else if (base->kind() == AtomKind::Scripts) {
-    sa = static_cast<ScriptsAtom*>(base.get());
+  } else if ((sa = dynamic_cast<ScriptsAtom*>(base.get()))) {
     _base = sa->_base;
     _sup = sptrOf<RowAtom>(sa->_sup);
     _sub = sptrOf<RowAtom>(sa->_sub);
@@ -139,8 +137,8 @@ VRowAtom::VRowAtom(const sptr<Atom>& el) {
   _halign = Alignment::none;
   _raise = sptrOf<SpaceAtom>(UnitType::ex, 0.f, 0.f, 0.f);
   if (el != nullptr) {
-    if (el->kind() == AtomKind::VRowAtom) {
-      auto* a = static_cast<VRowAtom*>(el.get());
+    auto* a = dynamic_cast<VRowAtom*>(el.get());
+    if (a != nullptr) {
       _elements.insert(_elements.end(), a->_elements.begin(), a->_elements.end());
     } else {
       _elements.push_back(el);
@@ -264,17 +262,12 @@ sptr<Box> PhantomAtom::createBox(Environment& env) {
 
 void AccentedAtom::init(const sptr<Atom>& base, const sptr<Atom>& accent) {
   _base = base;
-  if (base->kind() == AtomKind::AccentedAtom) {
-    auto* a = static_cast<AccentedAtom*>(base.get());
-    _underbase = a->_underbase;
-  }
+  auto* a = dynamic_cast<AccentedAtom*>(base.get());
+  if (a != nullptr) _underbase = a->_underbase;
   else _underbase = base;
 
-  if (accent->kind() == AtomKind::SymbolAtom) {
-    _accent = static_pointer_cast<SymbolAtom>(accent);
-  } else {
-    return; // Invalid accent - ignoring
-  }
+  _accent = dynamic_pointer_cast<SymbolAtom>(accent);
+  if (_accent == nullptr) throw ex_invalid_symbol_type("Invalid accent!");
 
   _acc = true;
   _changeSize = true;
@@ -284,44 +277,38 @@ AccentedAtom::AccentedAtom(const sptr<Atom>& base, const string& name) {
   _accent = SymbolAtom::get(name);
   if (_accent->_type == AtomType::accent) {
     _base = base;
-    if (base->kind() == AtomKind::AccentedAtom) {
-      auto* a = static_cast<AccentedAtom*>(base.get());
-      _underbase = a->_underbase;
-    }
+    auto* a = dynamic_cast<AccentedAtom*>(base.get());
+    if (a != nullptr) _underbase = a->_underbase;
     else _underbase = base;
   } else {
-    // Symbol not defined as accent - using default
-    _base = base;
-    _underbase = base;
+    throw ex_invalid_symbol_type(
+      "The symbol with the name '"
+      + name + "' is not defined as an accent ("
+      + TeXSymbolParser::TYPE_ATTR + "='acc') in '"
+      + TeXSymbolParser::RESOURCE_NAME + "'!"
+    );
   }
   _changeSize = true;
   _acc = false;
 }
 
 AccentedAtom::AccentedAtom(const sptr<Atom>& base, const sptr<Formula>& acc) {
-  if (acc == nullptr) {
-    _base = base;
-    _underbase = base;
-    _changeSize = true;
-    _acc = false;
-    return;
-  }
+  if (acc == nullptr) throw ex_invalid_formula("the accent Formula can't be null!");
   _changeSize = true;
   _acc = false;
   auto root = acc->_root;
-  if (root->kind() != AtomKind::SymbolAtom) {
-    _base = base;
-    _underbase = base;
-    return;
-  }
-  _accent = static_pointer_cast<SymbolAtom>(root);
+  _accent = dynamic_pointer_cast<SymbolAtom>(root);
+  if (_accent == nullptr)
+    throw ex_invalid_formula("The accent Formula does not represet a single symbol!");
   if (_accent->_type == AtomType::accent) {
     _base = base;
   } else {
-    // Symbol not defined as accent - using default
-    _base = base;
-    _underbase = base;
-    return;
+    throw ex_invalid_symbol_type(
+      "The accent Formula represents a single symbol with the name '"
+      + _accent->getName() + "', but this symbol is not defined as accent ("
+      + TeXSymbolParser::TYPE_ATTR + "='acc') in '"
+      + TeXSymbolParser::RESOURCE_NAME + "'!"
+    );
   }
 }
 
@@ -338,10 +325,8 @@ sptr<Box> AccentedAtom::createBox(Environment& env) {
 
   float u = b->_width;
   float s = 0;
-  if (_underbase->kind() == AtomKind::CharSymbol) {
-    auto* sym = static_cast<CharSymbol*>(_underbase.get());
-    s = tf->getSkew(*(sym->getCharFont(*tf)), style);
-  }
+  auto* sym = dynamic_cast<CharSymbol*>(_underbase.get());
+  if (sym != nullptr) s = tf->getSkew(*(sym->getCharFont(*tf)), style);
 
   // retrieve best char from the accent symbol
   auto* acc = (SymbolAtom*) _accent.get();
@@ -488,14 +473,15 @@ sptr<Box> ScriptsAtom::createBox(Environment& env) {
   // set delta and preliminary shift-up and shift-down values
   float delta = 0, shiftUp = 0, shiftDown = 0;
 
-  if (_base->kind() == AtomKind::AccentedAtom) {
-    auto* acc = static_cast<AccentedAtom*>(_base.get());
+  auto* acc = dynamic_cast<AccentedAtom*>(_base.get());
+  auto* sym = dynamic_cast<SymbolAtom*>(_base.get());
+  auto* cs = dynamic_cast<CharSymbol*>(_base.get());
+  if (acc != nullptr) {
     // special case: accent
     auto box = acc->_base->createBox(*(env.crampStyle()));
     shiftUp = box->_height - tf->getSupDrop(supStyle.getStyle());
     shiftDown = box->_depth + tf->getSubDrop(subStyle.getStyle());
-  } else if (_base->kind() == AtomKind::SymbolAtom && _base->_type == AtomType::bigOperator) {
-    auto* sym = static_cast<SymbolAtom*>(_base.get());
+  } else if (sym != nullptr && _base->_type == AtomType::bigOperator) {
     // single big operator symbol
     Char c = tf->getChar(sym->getName(), style);
     // display style
@@ -513,8 +499,7 @@ sptr<Box> ScriptsAtom::createBox(Environment& env) {
 
     shiftUp = hor->_height - tf->getSupDrop(supStyle.getStyle());
     shiftDown = hor->_depth + tf->getSubDrop(subStyle.getStyle());
-  } else if (_base->kind() == AtomKind::CharSymbol) {
-    auto* cs = static_cast<CharSymbol*>(_base.get());
+  } else if (cs != nullptr) {
     shiftUp = shiftDown = 0;
     sptr<CharFont> pcf = cs->getCharFont(*tf);
     CharFont& cf = *pcf;
@@ -622,9 +607,6 @@ sptr<Box> BigOperatorAtom::changeWidth(const sptr<Box>& b, float maxWidth) {
 }
 
 sptr<Box> BigOperatorAtom::createSideSets(Environment& env) {
-  if (_base->kind() != AtomKind::SideSets) {
-    return sptrOf<StrutBox>(0.f, 0.f, 0.f, 0.f);
-  }
   auto* sa = static_cast<SideSetsAtom*>(_base.get());
   auto sl = sa->_left, sr = sa->_right, sb = sa->_base;
   if (sb == nullptr) {
@@ -637,14 +619,8 @@ sptr<Box> BigOperatorAtom::createSideSets(Environment& env) {
   pa->_limitsType = LimitsType::noLimits;
   pa->_type = AtomType::bigOperator;
 
-  ScriptsAtom* l = nullptr;
-  ScriptsAtom* r = nullptr;
-  if (sl != nullptr && sl->kind() == AtomKind::Scripts) {
-    l = static_cast<ScriptsAtom*>(sl.get());
-  }
-  if (sr != nullptr && sr->kind() == AtomKind::Scripts) {
-    r = static_cast<ScriptsAtom*>(sr.get());
-  }
+  auto* l = dynamic_cast<ScriptsAtom*>(sl.get());
+  auto* r = dynamic_cast<ScriptsAtom*>(sr.get());
 
   if (l != nullptr && l->_base == nullptr) {
     l->_base = pa;
@@ -666,10 +642,12 @@ sptr<Box> BigOperatorAtom::createSideSets(Environment& env) {
   const TexStyle style = env.getStyle();
 
   float delta = 0;
-  if (sb->_type == AtomType::bigOperator && sb->kind() == AtomKind::SymbolAtom) {
-    auto* sym = static_cast<SymbolAtom*>(sb.get());
-    Char c = tf->getChar(sym->getName(), style);
-    delta = c.getItalic();
+  if (sb->_type == AtomType::bigOperator) {
+    auto* sym = dynamic_cast<SymbolAtom*>(sb.get());
+    if (sym != nullptr) {
+      Char c = tf->getChar(sym->getName(), style);
+      delta = c.getItalic();
+    }
   }
 
   // under and over
@@ -708,7 +686,7 @@ sptr<Box> BigOperatorAtom::createSideSets(Environment& env) {
 }
 
 sptr<Box> BigOperatorAtom::createBox(Environment& env) {
-  if (_base->kind() == AtomKind::SideSets) return createSideSets(env);
+  if (dynamic_cast<SideSetsAtom*>(_base.get())) return createSideSets(env);
 
   TeXFont* tf = env.getTeXFont().get();
   const TexStyle style = env.getStyle();
@@ -716,17 +694,13 @@ sptr<Box> BigOperatorAtom::createBox(Environment& env) {
   RowAtom* row = nullptr;
   auto Base = _base;
 
-  if (_base->kind() == AtomKind::Typed) {
-    auto* ta = static_cast<TypedAtom*>(_base.get());
+  auto* ta = dynamic_cast<TypedAtom*>(_base.get());
+  if (ta != nullptr) {
     auto atom = ta->getBase();
-    if (atom->kind() == AtomKind::Row) {
-      auto* ra = static_cast<RowAtom*>(atom.get());
-      if (ra->_lookAtLastAtom && _base->_limitsType != LimitsType::limits) {
-        _base = ra->popLastAtom();
-        row = ra;
-      } else {
-        _base = atom;
-      }
+    auto* ra = dynamic_cast<RowAtom*>(atom.get());
+    if (ra != nullptr && ra->_lookAtLastAtom && _base->_limitsType != LimitsType::limits) {
+      _base = ra->popLastAtom();
+      row = ra;
     } else {
       _base = atom;
     }
@@ -754,8 +728,8 @@ sptr<Box> BigOperatorAtom::createBox(Environment& env) {
   sptr<Box> y(nullptr);
   float delta;
 
-  if (_base->kind() == AtomKind::SymbolAtom && _base->_type == AtomType::bigOperator) {
-    auto* sym = static_cast<SymbolAtom*>(_base.get());
+  auto* sym = dynamic_cast<SymbolAtom*>(_base.get());
+  if (sym != nullptr && _base->_type == AtomType::bigOperator) {
     // single big operator symbol
     Char c = tf->getChar(sym->getName(), style);
     y = _base->createBox(env);
@@ -839,14 +813,8 @@ sptr<Box> SideSetsAtom::createBox(Environment& env) {
   auto bb = _base->createBox(env);
   auto pa = sptrOf<PlaceholderAtom>(0.f, bb->_height, bb->_depth, bb->_shift);
 
-  ScriptsAtom* l = nullptr;
-  ScriptsAtom* r = nullptr;
-  if (_left != nullptr && _left->kind() == AtomKind::Scripts) {
-    l = static_cast<ScriptsAtom*>(_left.get());
-  }
-  if (_right != nullptr && _right->kind() == AtomKind::Scripts) {
-    r = static_cast<ScriptsAtom*>(_right.get());
-  }
+  auto* l = dynamic_cast<ScriptsAtom*>(_left.get());
+  auto* r = dynamic_cast<ScriptsAtom*>(_right.get());
 
   if (l != nullptr && l->_base == nullptr) {
     l->_base = pa;

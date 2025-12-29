@@ -22,14 +22,14 @@ const std::map<std::string, tex::AtomType> TeXSymbolParser::_typeMappings = {
 
 std::string TeXSymbolParser::getAttr(const char* attr, const XMLElement* e) {
   const char* x = e->Attribute(attr);
-  if (x == nullptr || strlen(x) == 0) return "";
+  if (x == nullptr || strlen(x) == 0) throw ex_xml_parse(RESOURCE_NAME, e->Name(), attr, "no mapping!");
   return x;
 }
 
 TeXSymbolParser::TeXSymbolParser(const std::string& file)
     : _doc(true, COLLAPSE_WHITESPACE) {
   int err = _doc.LoadFile(file.c_str());
-  if (err != XML_SUCCESS) return;
+  if (err != XML_SUCCESS) throw ex_res_parse(file + " not found!");
   _root = _doc.RootElement();
 }
 
@@ -43,8 +43,7 @@ void TeXSymbolParser::readSymbols(std::map<std::string, sptr<SymbolAtom>>& res) 
     // check if type is valid
     auto it = _typeMappings.find(type);
     if (it == _typeMappings.end()) {
-      e = e->NextSiblingElement("Symbol");
-      continue;
+      throw ex_xml_parse(RESOURCE_NAME, "Symbol", "type", "has an unknown value '" + type + "'!");
     }
     res[name] = sptrOf<SymbolAtom>(name, it->second, isDelimiter);
     e = e->NextSiblingElement("Symbol");
@@ -56,18 +55,18 @@ const std::string TeXFormulaSettingParser::RESOURCE_NAME = "TeXFormulaSettings";
 TeXFormulaSettingParser::TeXFormulaSettingParser(const std::string& file)
     : _doc(true, COLLAPSE_WHITESPACE) {
   int err = _doc.LoadFile(file.c_str());
-  if (err != XML_SUCCESS) return;
+  if (err != XML_SUCCESS) throw ex_xml_parse(file + " not found!");
   _root = _doc.RootElement();
 }
 
 int TeXFormulaSettingParser::getUtf(const XMLElement* e, const char* attr) {
   const char* val = e->Attribute(attr);
   if (val == nullptr || strlen(val) == 0) {
-    return -1;
+    throw ex_xml_parse(RESOURCE_NAME, e->Name(), attr, "no mapping!");
   }
   const std::wstring wstr = tex::utf82wide(val);
   if (wstr.empty() || wstr.length() != 1) {
-    return -1;
+    throw ex_xml_parse(RESOURCE_NAME, e->Name(), attr, "unknown code point!");
   }
   return wstr[0];
 }
@@ -83,8 +82,7 @@ void TeXFormulaSettingParser::add2map(
     const char* text = r->Attribute("text");
     // check
     if (symbol == nullptr) {
-      r = r->NextSiblingElement("Map");
-      continue;
+      throw ex_xml_parse(RESOURCE_NAME, r->Name(), "symbol", "no mapping!");
     }
     math[ch] = symbol;
     if (text != nullptr) txt[ch] = text;
@@ -103,8 +101,7 @@ void TeXFormulaSettingParser::addFormula2map(
     const char* text = r->Attribute("text");
     // check
     if (formula == nullptr) {
-      r = r->NextSiblingElement("Map");
-      continue;
+      throw ex_xml_parse(RESOURCE_NAME, r->Name(), "formula", "no mapping!");
     }
     math[ch] = formula;
     if (text != nullptr) txt[ch] = text;

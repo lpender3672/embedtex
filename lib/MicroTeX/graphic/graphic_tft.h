@@ -24,7 +24,6 @@ public:
     int getStyle() const { return _style; }
 
     virtual float getSize() const override { return _size; }
-    virtual FontKind kind() const override { return FontKind::TFT; }
     virtual sptr<Font> deriveFont(int style) const override;
     virtual bool operator==(const Font& f) const override;
     virtual bool operator!=(const Font& f) const override;

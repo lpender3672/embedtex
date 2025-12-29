@@ -94,8 +94,9 @@ namespace tex {
                 std::wstring _a(t);
                 std::wstring_convert<std::codecvt_utf8<wchar_t>> converter;
                 std::string _b{};
-                _b = converter.to_bytes(_a);
-                if (_b.empty()) _b = "�";
+                try{_b = converter.to_bytes(_a);}
+                catch (const std::range_error& e)
+                { _b = "�";}
                 os << "\t["
                     << setw(3) << _b[0] << ", "
                     << setw(3) << _b[1] << "] = "

@@ -34,7 +34,7 @@ template<class T>
 inline int indexOf(const std::vector<T>& v, const T& x) {
   auto it = find(v.begin(), v.end(), x);
   int i = std::distance(v.begin(), it);
-  return (static_cast<size_t>(i) >= v.size() ? -1 : i);
+  return (i >= v.size() ? -1 : i);
 }
 
 /** 

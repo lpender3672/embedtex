@@ -59,9 +59,9 @@ void tex::print_box(const sptr<Box>& b) {
 #endif  // HAVE_LOG
 
 sptr<Box> BoxSplitter::split(const sptr<Box>& b, float width, float lineSpace) {
+  auto h = dynamic_pointer_cast<HBox>(b);
   sptr<Box> box;
-  if (b->kind() == BoxKind::HBox) {
-    auto h = static_pointer_cast<HBox>(b);
+  if (h != nullptr) {
     auto box = split(h, width, lineSpace);
 #ifdef HAVE_LOG
     if (box != b) {
@@ -129,8 +129,8 @@ float BoxSplitter::canBreak(stack<Position>& s, const sptr<HBox>& hbox, const fl
     cumWidth[i + 1] = cumWidth[i] + box->_width;
     if (cumWidth[i + 1] <= width) continue;
     int pos = getBreakPosition(hbox, i);
-    if (box->kind() == BoxKind::HBox) {
-      auto h = static_pointer_cast<HBox>(box);
+    auto h = dynamic_pointer_cast<HBox>(box);
+    if (h != nullptr) {
       stack<Position> sub;
       float w = canBreak(sub, h, width - cumWidth[i]);
       if (w != box->_width && (cumWidth[i] + w <= width || pos == -1)) {

@@ -24,7 +24,7 @@ TeXRender::TeXRender(const sptr<Box>& box, float textSize, bool trueValues) {
     const auto group = wrap(box);
     _box = group;
     BoxFilter filter = [](auto b) {
-      return b->kind() == BoxKind::CharBox;
+      return dynamic_cast<CharBox*>(b.get()) != nullptr;
     };
     buildDebug(nullptr, group, std::move(filter));
   }
@@ -32,8 +32,8 @@ TeXRender::TeXRender(const sptr<Box>& box, float textSize, bool trueValues) {
 
 sptr<BoxGroup> TeXRender::wrap(const sptr<Box>& box) {
   sptr<BoxGroup> parent;
-  if (box->kind() == BoxKind::HBox || box->kind() == BoxKind::VBox) {
-    parent = static_pointer_cast<BoxGroup>(box);
+  if (auto group = dynamic_pointer_cast<BoxGroup>(box); group != nullptr) {
+    parent = group;
   } else {
     parent = sptrOf<HBox>(box);
   }
@@ -55,8 +55,7 @@ void TeXRender::buildDebug(
       parent->addOnly(sptrOf<StrutBox>(box));
     }
   }
-  if (box->kind() == BoxKind::HBox || box->kind() == BoxKind::VBox) {
-    auto group = static_pointer_cast<BoxGroup>(box);
+  if (auto group = dynamic_pointer_cast<BoxGroup>(box); group != nullptr) {
     const auto kern = sptrOf<StrutBox>(-group->_width, -group->_height, -group->_depth, -group->_shift);
     // snapshot of current children
     const auto children = group->descendants();
@@ -64,8 +63,7 @@ void TeXRender::buildDebug(
     for (const auto& child: children) {
       buildDebug(group, child, std::forward<BoxFilter>(filter));
     }
-  } else if (box->kind() == BoxKind::DecorBox) {
-    auto decor = static_pointer_cast<DecorBox>(box);
+  } else if (auto decor = dynamic_pointer_cast<DecorBox>(box); decor != nullptr) {
     const auto g = wrap(decor->_base);
     decor->_base = g;
     buildDebug(nullptr, g, std::forward<BoxFilter>(filter));
@@ -170,8 +168,7 @@ TeXRender* TeXRenderBuilder::build(const sptr<Atom>& fc) {
   sptr<Atom> f = fc;
   if (f == nullptr) f = sptrOf<EmptyAtom>();
   if (_textSize == -1) {
-    // A size is required - returning nullptr
-    return nullptr;
+    throw ex_invalid_state("A size is required, call function setSize before build.");
   }
 
   DefaultTeXFont* font = (

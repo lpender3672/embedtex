@@ -15,17 +15,19 @@ bool NewCommandMacro::isMacro(const wstring& name) {
 }
 
 void NewCommandMacro::checkNew(const wstring& name) {
-  if (_errIfConflict && isMacro(name)) {
-    // Command already exists - ignore
-    return;
-  }
+  if (_errIfConflict && isMacro(name))
+    throw ex_parse(
+      "Command " + wide2utf8(name)
+      + " already exists! Use renewcommand instead!"
+    );
 }
 
 void NewCommandMacro::checkRenew(const wstring& name) {
-  if (NewCommandMacro::_errIfConflict && !isMacro(name)) {
-    // Command not defined - ignore
-    return;
-  }
+  if (NewCommandMacro::_errIfConflict && !isMacro(name))
+    throw ex_parse(
+      "Command " + wide2utf8(name)
+      + " is no defined! Use newcommand instead!"
+    );
 }
 
 void NewCommandMacro::addNewCommand(const wstring& name, const wstring& code, int argc) {
@@ -111,8 +113,10 @@ void NewEnvironmentMacro::addRenewEnvironment(
   int argc
 ) {
   if (_codes.find(name + L"@env") == _codes.end()) {
-    // Environment not defined - ignore
-    return;
+    throw ex_parse(
+      "Environment " + wide2utf8(name)
+      + "is not defined! Use newenvironment instead!"
+    );
   }
   addRenewCommand(
     name + L"@env",
@@ -145,5 +149,14 @@ sptr<Atom> PreDefMacro::invoke(
   TeXParser& tp,
   vector<wstring>& args
 ) {
-  return _delegate(tp, args);
+  try {
+    return _delegate(tp, args);
+  } catch (ex_parse& e) {
+    throw ex_parse(
+      "Problem with command "
+      + wide2utf8(args[0])
+      + " at position " + tostring(tp.getLine()) + ":"
+      + tostring(tp.getCol()) + "\n caused by: " + e.what()
+    );
   }
+}

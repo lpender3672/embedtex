@@ -11,8 +11,6 @@ namespace tex {
 /** Atom to justify cells in array */
 class CellSpecifier : public Atom {
 public:
-  AtomKind kind() const override { return AtomKind::CellSpecifier; }
-
   virtual void apply(WrapperBox& box) = 0;
 
   sptr<Box> createBox(Environment& env) override {

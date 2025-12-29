@@ -71,8 +71,6 @@ public:
    */
   explicit CharBox(const Char& chr);
 
-  BoxKind kind() const override { return BoxKind::CharBox; }
-
   void addItalicCorrectionToWidth();
 
   void draw(Graphics2D& g2, float x, float y) override;

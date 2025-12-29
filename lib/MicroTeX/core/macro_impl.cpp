@@ -41,7 +41,7 @@ macro(cfrac) {
   Formula num(tp, args[1], false);
   Formula denom(tp, args[2], false);
   if (num._root == nullptr || denom._root == nullptr)
-    return nullptr; // Empty numerator or denominator
+    throw ex_parse("Both numerator and denominator of a fraction can't be empty!");
   auto f = sptrOf<FractionAtom>(num._root, denom._root, true, numAlign, Alignment::center);
   f->_useKern = false;
   f->_type = AtomType::inner;
@@ -54,7 +54,7 @@ macro(sfrac) {
   Formula num(tp, args[1], false);
   Formula den(tp, args[2], false);
   if (num._root == nullptr || den._root == nullptr)
-    return nullptr; // Empty numerator or denominator
+    throw ex_parse("Both numerator and denominator of a fraction can't be empty!");
 
   float sx = 0.75f, sy = 0.75f, r = 0.45f, sL = -0.13f, sR = -0.065f;
   sptr<Atom> slash = SymbolAtom::get("slash");
@@ -86,14 +86,10 @@ macro(genfrac) {
   sptr<SymbolAtom> L, R;
 
   Formula left(tp, args[1], false);
-  if (left._root && left._root->kind() == AtomKind::SymbolAtom) {
-    L = static_pointer_cast<SymbolAtom>(left._root);
-  }
+  L = dynamic_pointer_cast<SymbolAtom>(left._root);
 
   Formula right(tp, args[2], false);
-  if (right._root && right._root->kind() == AtomKind::SymbolAtom) {
-    R = static_pointer_cast<SymbolAtom>(right._root);
-  }
+  R = dynamic_pointer_cast<SymbolAtom>(right._root);
 
   bool rule = true;
   auto[unit, value] = SpaceAtom::getLength(args[3]);
@@ -109,7 +105,7 @@ macro(genfrac) {
   Formula num(tp, args[5], false);
   Formula den(tp, args[6], false);
   if (num._root == nullptr || den._root == nullptr) {
-    return nullptr; // Empty numerator or denominator
+    throw ex_parse("Both numerator and denominator of a fraction can't be empty!");
   }
   auto fa = sptrOf<FractionAtom>(num._root, den._root, rule, unit, value);
   auto* ra = new RowAtom();
@@ -127,27 +123,18 @@ sptr<Atom> _frac_with_delims(TeXParser& tp, Args& args, bool rule, bool hasLengt
   auto den = Formula(tp, tp.getOverArgument(), false)._root;
 
   if (num == nullptr || den == nullptr)
-    return nullptr; // Empty numerator or denominator
+    throw ex_parse("Both numerator and denominator of a fraction can't be empty!");
 
   auto left = Formula(tp, args[1], false)._root;
-  if (left->kind() == AtomKind::BigDelimiter) {
-    auto* bigl = static_cast<BigDelimiterAtom*>(left.get());
-    left = bigl->_delim;
-  }
+  auto bigl = dynamic_cast<BigDelimiterAtom*>(left.get());
+  if (bigl != nullptr) left = bigl->_delim;
 
   auto right = Formula(tp, args[2], false)._root;
-  if (right->kind() == AtomKind::BigDelimiter) {
-    auto* bigr = static_cast<BigDelimiterAtom*>(right.get());
-    right = bigr->_delim;
-  }
+  auto bigr = dynamic_cast<BigDelimiterAtom*>(right.get());
+  if (bigr != nullptr) right = bigr->_delim;
 
-  sptr<SymbolAtom> sl, sr;
-  if (left->kind() == AtomKind::SymbolAtom) {
-    sl = static_pointer_cast<SymbolAtom>(left);
-  }
-  if (right->kind() == AtomKind::SymbolAtom) {
-    sr = static_pointer_cast<SymbolAtom>(right);
-  }
+  auto sl = dynamic_pointer_cast<SymbolAtom>(left);
+  auto sr = dynamic_pointer_cast<SymbolAtom>(right);
   if (sl != nullptr && sr != nullptr) {
     auto f = (
       hasLength
@@ -253,24 +240,15 @@ macro(left) {
   wstring grep = tp.getGroup(L"\\left", L"\\right");
 
   auto left = Formula(tp, args[1], false)._root;
-  if (left->kind() == AtomKind::BigDelimiter) {
-    auto* big = static_cast<BigDelimiterAtom*>(left.get());
-    left = big->_delim;
-  }
+  auto* big = dynamic_cast<BigDelimiterAtom*>(left.get());
+  if (big != nullptr) left = big->_delim;
 
   auto right = tp.getArgument();
-  if (right->kind() == AtomKind::BigDelimiter) {
-    auto* big = static_cast<BigDelimiterAtom*>(right.get());
-    right = big->_delim;
-  }
+  big = dynamic_cast<BigDelimiterAtom*>(right.get());
+  if (big != nullptr) right = big->_delim;
 
-  sptr<SymbolAtom> sl, sr;
-  if (left->kind() == AtomKind::SymbolAtom) {
-    sl = static_pointer_cast<SymbolAtom>(left);
-  }
-  if (right->kind() == AtomKind::SymbolAtom) {
-    sr = static_pointer_cast<SymbolAtom>(right);
-  }
+  auto sl = dynamic_pointer_cast<SymbolAtom>(left);
+  auto sr = dynamic_pointer_cast<SymbolAtom>(right);
   if (sl != nullptr && sr != nullptr) {
     Formula tf(tp, grep, false);
     return sptrOf<FencedAtom>(tf._root, sl, tf._middle, sr);
@@ -286,7 +264,7 @@ macro(left) {
 
 macro(intertext) {
   if (!tp.isArrayMode())
-    return nullptr; // Not in array mode
+    throw ex_parse("Command \\intertext must used in array environment!");
 
   wstring str(args[1]);
   replaceall(str, L"^{\\prime}", L"\'");
@@ -304,7 +282,7 @@ macro(newcommand) {
   wstring newcmd(args[1]);
   int nbArgs = 0;
   if (!tp.isValidName(newcmd))
-    return nullptr; // Invalid command name
+    throw ex_parse("Invalid name for the command '" + wide2utf8(newcmd));
 
   if (!args[3].empty()) valueof(args[3], nbArgs);
 
@@ -321,7 +299,7 @@ macro(renewcommand) {
   wstring newcmd(args[1]);
   int nbArgs = 0;
   if (!tp.isValidName(newcmd))
-    return nullptr; // Invalid command name
+    throw ex_parse("Invalid name for the command: " + wide2utf8(newcmd));
 
   if (!args[3].empty()) valueof(args[3], nbArgs);
 
@@ -350,11 +328,8 @@ macro(definecolor) {
     c = rgb(f, f, f);
   } else if (args[2] == L"rgb") {
     StrTokenizer stok(cs, ":,");
-    if (stok.count() != 3) {
-      // Invalid color definition - use transparent
-      ColorAtom::defineColor(wide2utf8(args[1]), TRANSPARENT);
-      return nullptr;
-    }
+    if (stok.count() != 3)
+      throw ex_parse("The color definition must have three components!");
     float r, g, b;
     string R = stok.next(), G = stok.next(), B = stok.next();
     valueof(trim(R), r);
@@ -363,11 +338,8 @@ macro(definecolor) {
     c = rgb(r, g, b);
   } else if (args[2] == L"cmyk") {
     StrTokenizer stok(cs, ":,");
-    if (stok.count() != 4) {
-      // Invalid color definition - use transparent
-      ColorAtom::defineColor(wide2utf8(args[1]), TRANSPARENT);
-      return nullptr;
-    }
+    if (stok.count() != 4)
+      throw ex_parse("The color definition must have four components!");
     float cmyk[4];
     for (float& i : cmyk) {
       string X = stok.next();
@@ -376,8 +348,7 @@ macro(definecolor) {
     float k = 1 - cmyk[3];
     c = rgb(k * (1 - cmyk[0]), k * (1 - cmyk[1]), k * (1 - cmyk[2]));
   } else {
-    // Incorrect color model - use transparent
-    c = TRANSPARENT;
+    throw ex_parse("Color model is incorrect!");
   }
 
   ColorAtom::defineColor(wide2utf8(args[1]), c);

@@ -44,7 +44,7 @@ inline macro(breakEverywhere) {
 }
 
 inline macro(multirow) {
-  if (!tp.isArrayMode()) return nullptr; // Not in array mode
+  if (!tp.isArrayMode()) throw ex_parse("Command \\multirow must used in array environment!");
   int n = 0;
   valueof(args[1], n);
   tp.addAtom(sptrOf<MultiRowAtom>(n, args[2], Formula(tp, args[3])._root));
@@ -56,12 +56,12 @@ inline macro(longdiv) {
   valueof(args[1], dividend);
   long divisor = 0;
   valueof(args[2], divisor);
-  if (divisor == 0) return nullptr; // Invalid divisor
+  if (divisor == 0) throw ex_parse("Divisor must not be 0.");
   return sptrOf<LongDivAtom>(divisor, dividend);
 }
 
 inline macro(cellcolor) {
-  if (!tp.isArrayMode()) return nullptr; // Not in array mode
+  if (!tp.isArrayMode()) throw ex_parse("Command \\cellcolor must used in array environment!");
   color c = ColorAtom::getColor(wide2utf8(args[1]));
   auto atom = sptrOf<CellColorAtom>(c);
   ((ArrayFormula*) tp._formula)->addCellSpecifier(atom);
@@ -96,7 +96,7 @@ inline macro(columnbg) {
 }
 
 inline macro(rowcolor) {
-  if (!tp.isArrayMode()) return nullptr; // Not in array mode
+  if (!tp.isArrayMode()) throw ex_parse("Command \\rowcolor must used in array environment!");
   color c = ColorAtom::getColor(wide2utf8(args[1]));
   auto spe = sptrOf<CellColorAtom>(c);
   ((ArrayFormula*) tp._formula)->addRowSpecifier(spe);
@@ -144,7 +144,7 @@ inline macro(frac) {
   Formula num(tp, args[1], false);
   Formula den(tp, args[2], false);
   if (num._root == nullptr || den._root == nullptr)
-    return nullptr; // Empty numerator or denominator
+    throw ex_parse("Both numerator and denominator of a fraction can't be empty!");
   return sptrOf<FractionAtom>(num._root, den._root, true);
 }
 
@@ -152,7 +152,7 @@ inline macro(over) {
   auto num = tp.popFormulaAtom();
   auto den = Formula(tp, tp.getOverArgument(), false)._root;
   if (num == nullptr || den == nullptr)
-    return nullptr; // Empty numerator or denominator
+    throw ex_parse("Both numerator and denominator of a fraction can't be empty!");
   return sptrOf<FractionAtom>(num, den, true);
 }
 
@@ -160,7 +160,7 @@ inline macro(atop) {
   auto num = tp.popFormulaAtom();
   auto den = Formula(tp, tp.getOverArgument(), false)._root;
   if (num == nullptr || den == nullptr)
-    return nullptr; // Empty numerator or denominator
+    throw ex_parse("Both numerator and denominator of a fraction can't be empty!");
   return sptrOf<FractionAtom>(num, den, false);
 }
 
@@ -171,7 +171,7 @@ inline sptr<Atom> _choose(
   auto num = tp.popFormulaAtom();
   auto den = Formula(tp, tp.getOverArgument(), false)._root;
   if (num == nullptr || den == nullptr)
-    return nullptr; // Empty numerator or denominator
+    throw ex_parse("Both numerator and denominator of choose can't be empty!");
   auto f = sptrOf<FractionAtom>(num, den, false);
   auto l = sptrOf<SymbolAtom>(left, AtomType::opening, true);
   auto r = sptrOf<SymbolAtom>(right, AtomType::closing, true);
@@ -199,7 +199,7 @@ inline sptr<Atom> _cancel(
   TeXParser& tp, std::vector<std::wstring>& args) {
   auto base = Formula(tp, args[1], false)._root;
   if (base == nullptr)
-    return nullptr; // Empty cancel content
+    throw ex_parse("Cancel content must not be empty!");
   return sptrOf<CancelAtom>(base, cancelType);
 }
 
@@ -219,7 +219,7 @@ inline macro(binom) {
   Formula num(tp, args[1], false);
   Formula den(tp, args[2], false);
   if (num._root == nullptr || den._root == nullptr)
-    return nullptr; // Empty binomial coefficients
+    throw ex_parse("Both binomial coefficients must be not empty!");
   auto f = sptrOf<FractionAtom>(num._root, den._root, false);
   sptr<SymbolAtom> l(new SymbolAtom("lbrack", AtomType::opening, true));
   sptr<SymbolAtom> r(new SymbolAtom("rbrack", AtomType::closing, true));
@@ -231,7 +231,7 @@ inline macro(above) {
   auto[unit, value] = tp.getLength();
   auto den = Formula(tp, tp.getOverArgument(), false)._root;
   if (num == nullptr || den == nullptr)
-    return nullptr; // Empty numerator or denominator
+    throw ex_parse("Both numerator and denominator of a fraction can't be empty!");
 
   return sptrOf<FractionAtom>(num, den, unit, value);
 }
@@ -353,14 +353,10 @@ inline macro(sideset) {
     auto in = sptrOf<CharAtom>(L'M', "mathnormal");
     op = sptrOf<PhantomAtom>(in, false, true, true);
   }
-  if (l->kind() == AtomKind::CumulativeScripts) {
-    auto* cl = static_cast<CumulativeScriptsAtom*>(l.get());
-    l = cl->getScriptsAtom();
-  }
-  if (r->kind() == AtomKind::CumulativeScripts) {
-    auto* cr = static_cast<CumulativeScriptsAtom*>(r.get());
-    r = cr->getScriptsAtom();
-  }
+  auto cl = dynamic_cast<CumulativeScriptsAtom*>(l.get());
+  auto cr = dynamic_cast<CumulativeScriptsAtom*>(r.get());
+  if (cl != nullptr) l = cl->getScriptsAtom();
+  if (cr != nullptr) r = cr->getScriptsAtom();
   return sptrOf<SideSetsAtom>(op, l, r);
 }
 
@@ -551,7 +547,7 @@ inline macro(multicolumn) {
 
 inline macro(hdotsfor) {
   if (!tp.isArrayMode())
-    return nullptr; // Not in array mode
+    throw ex_parse("Command 'hdotsfor' only available in array mode!");
   int n = 0;
   valueof(args[1], n);
   float f = 1.f;
@@ -592,7 +588,7 @@ inline macro(alignatATATenv) {
   arr->checkDimensions();
   size_t n = 0;
   valueof(args[1], n);
-  if (arr->cols() != 2 * n) return nullptr; // Bad number of equations
+  if (arr->cols() != 2 * n) throw ex_parse("Bad number of equations in alignat environment!");
 
   return sptrOf<MatrixAtom>(tp.isPartial(), sptr<ArrayFormula>(arr), MatrixType::alignAt);
 }
@@ -613,7 +609,7 @@ inline macro(alignedatATATenv) {
   size_t n = 0;
   valueof(args[1], n);
   if (arr->cols() != 2 * n) {
-    return nullptr; // Bad number of equations
+    throw ex_parse("Bad number of equations in alignedat environment!");
   }
 
   return sptrOf<MatrixAtom>(tp.isPartial(), sptr<ArrayFormula>(arr), MatrixType::alignedAt);
@@ -625,7 +621,7 @@ inline macro(multlineATATenv) {
   p.parse();
   arr->checkDimensions();
   if (arr->cols() > 1) {
-    return nullptr; // Too many columns
+    throw ex_parse("Requires exact one column in multiline envrionment!");
   }
   if (arr->cols() == 0) return nullptr;
 
@@ -637,7 +633,7 @@ inline macro(gatherATATenv) {
   TeXParser p(tp.isPartial(), args[1], arr, false);
   p.parse();
   arr->checkDimensions();
-  if (arr->cols() > 1) return nullptr; // Too many columns
+  if (arr->cols() > 1) throw ex_parse("Requires exact one column in gather envrionment!");
   if (arr->cols() == 0) return nullptr;
 
   return sptrOf<MultlineAtom>(
@@ -649,7 +645,7 @@ inline macro(gatheredATATenv) {
   TeXParser p(tp.isPartial(), args[1], arr, false);
   p.parse();
   arr->checkDimensions();
-  if (arr->cols() > 1) return nullptr; // Too many columns
+  if (arr->cols() > 1) throw ex_parse("Requires exact one column in gathered envrionment!");
   if (arr->cols() == 0) return nullptr;
 
   return sptrOf<MultlineAtom>(tp.isPartial(), sptr<ArrayFormula>(arr), MultiLineType::gathered);
@@ -850,8 +846,8 @@ inline sptr<Atom> _big(
   AtomType type = AtomType::none
 ) {
   auto a = Formula(tp, args[1], false)._root;
-  if (a->kind() != AtomKind::SymbolAtom) return a;
-  auto s = std::static_pointer_cast<SymbolAtom>(a);
+  auto s = std::dynamic_pointer_cast<SymbolAtom>(a);
+  if (s == nullptr) return a;
   auto t = sptrOf<BigDelimiterAtom>(s, size);
   if (type != AtomType::none) t->_type = type;
   return t;
@@ -1035,7 +1031,7 @@ inline macro(magnification) {
 
 inline macro(hline) {
   if (!tp.isArrayMode())
-    return nullptr; // Not in array mode
+    throw ex_parse("The macro \\hline only available in array mode!");
   return sptrOf<HlineAtom>();
 }
 

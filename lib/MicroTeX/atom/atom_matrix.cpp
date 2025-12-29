@@ -369,16 +369,16 @@ void MatrixAtom::applyCell(WrapperBox& box, int i, int j) {
   if (col != _columnSpecifiers.end()) {
     auto spe = col->second;
     RowAtom* p = nullptr;
-    while (spe->kind() == AtomKind::Row) {
-      auto* r = static_cast<RowAtom*>(spe.get());
+    auto* r = dynamic_cast<RowAtom*>(spe.get());
+    while (r != nullptr) {
       spe = r->getFirstAtom();
       p = r;
+      r = dynamic_cast<RowAtom*>(spe.get());
     }
     if (p != nullptr) {
       for (size_t k = 0; k < p->size(); k++) {
-        auto atom = p->get(k);
-        if (atom->kind() == AtomKind::CellSpecifier) {
-          auto* s = static_cast<CellSpecifier*>(atom.get());
+        CellSpecifier* s = dynamic_cast<CellSpecifier*>(p->get(k).get());
+        if (s != nullptr) {
           s->apply(box);
         }
       }
@@ -559,8 +559,7 @@ sptr<Box> MatrixAtom::createBox(Environment& e) {
           auto* at = (HlineAtom*) _matrix->_array[i][j].get();
           at->setColor(LINE_COLOR);
           at->setWidth(matW);
-          if (i >= 1 && _matrix->_array[i - 1][j] != nullptr &&
-              _matrix->_array[i - 1][j]->kind() == AtomKind::Hline) {
+          if (i >= 1 && dynamic_cast<HlineAtom*>(_matrix->_array[i - 1][j].get()) != nullptr) {
             hb->add(sptrOf<StrutBox>(0.f, 2 * drt, 0.f, 0.f));
           }
 

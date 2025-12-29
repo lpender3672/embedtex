@@ -61,9 +61,6 @@ public:
   /** Create a new box with default options */
   Box() { init(); }
 
-  /** Get the kind of this box for type identification */
-  virtual BoxKind kind() const { return BoxKind::Basic; }
-
   /** Copy the metrics from another box */
   void copyMetrics(const sptr<Box>& box);
 
@@ -164,8 +161,6 @@ public:
   sptr<Box> _base;
 
   explicit DecorBox(const sptr<Box>& base) : _base(base) {}
-
-  BoxKind kind() const override { return BoxKind::DecorBox; }
 
   int lastFontId() override;
 

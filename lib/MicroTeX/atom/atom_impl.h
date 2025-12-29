@@ -26,8 +26,6 @@ public:
   BigDelimiterAtom(const sptr<SymbolAtom>& delim, int size)
     : _delim(delim), _size(size) {}
 
-  AtomKind kind() const override { return AtomKind::BigDelimiter; }
-
   sptr<Box> createBox(Environment& env) override {
     auto b = DelimiterFactory::create(*_delim, env, _size);
     auto* hb = new HBox();
@@ -189,7 +187,7 @@ public:
 
   sptr<Box> createBox(Environment& env) override {
     auto x = FBoxAtom::createBox(env);
-    auto box = std::static_pointer_cast<FramedBox>(x);
+    auto box = std::dynamic_pointer_cast<FramedBox>(x);
     float t = env.getTeXFont()->getDefaultRuleThickness(env.getStyle()) * 4;
     return sptrOf<ShadowBox>(box, t);
   }
@@ -211,7 +209,7 @@ public:
 
   sptr<Box> createBox(Environment& env) override {
     auto x = FBoxAtom::createBox(env);
-    auto box = std::static_pointer_cast<FramedBox>(x);
+    auto box = std::dynamic_pointer_cast<FramedBox>(x);
     return sptrOf<OvalBox>(box, _multiplier, _diameter);
   }
 

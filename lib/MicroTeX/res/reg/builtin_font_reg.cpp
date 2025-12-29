@@ -4,11 +4,40 @@ using namespace tex;
 
 DEF_FONT_SET(Builtin)
 
-// Minimal embedded font set - only essential fonts for basic math rendering
-REG_FONT(cmr10)      // Computer Modern Roman - main text
-REG_FONT(cmmi10)     // Computer Modern Math Italic - variables  
-REG_FONT(cmsy10)     // Computer Modern Symbol - operators
-REG_FONT(cmex10)     // Computer Modern Extension - large symbols
-REG_FONT(cmbx10)     // Computer Modern Bold Extended - bold text
+REG_FONT(msbm10)
+REG_FONT(cmex10)
+REG_FONT(cmmi10)
+REG_FONT(cmmib10)
+REG_FONT(moustache)
+REG_FONT(cmmi10_unchanged)
+REG_FONT(cmmib10_unchanged)
+REG_FONT(stmary10)
+REG_FONT(cmsy10)
+REG_FONT(msam10)
+REG_FONT(cmbsy10)
+REG_FONT(dsrom10)
+REG_FONT(rsfs10)
+REG_FONT(eufm10)
+REG_FONT(eufb10)
+REG_FONT(cmti10)
+REG_FONT(cmti10_unchanged)
+REG_FONT(cmbxti10)
+REG_FONT(cmr10)
+REG_FONT(cmss10)
+REG_FONT(cmssi10)
+REG_FONT(cmtt10)
+REG_FONT(cmbx10)
+REG_FONT(cmssbx10)
+REG_FONT(special)
+REG_FONT(r10)
+REG_FONT(r10_unchanged)
+REG_FONT(ss10)
+REG_FONT(si10)
+REG_FONT(i10)
+REG_FONT(bx10)
+REG_FONT(bi10)
+REG_FONT(sbi10)
+REG_FONT(sb10)
+REG_FONT(tt10)
 
 END_DEF_FONT_SET

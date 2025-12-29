@@ -89,7 +89,14 @@ void DefaultTeXFont::addAlphabet(
 }
 
 void DefaultTeXFont::addAlphabet(AlphabetRegistration* reg) {
-  addAlphabet(reg->getPackage(), reg->getUnicodeBlock(), reg->getTeXFontFile());
+  try {
+    addAlphabet(reg->getPackage(), reg->getUnicodeBlock(), reg->getTeXFontFile());
+  } catch (ex_font_loaded& e) {
+  } catch (ex_alphabet_registration& e) {
+#ifdef HAVE_LOG
+    __dbg("%s", e.what());
+#endif  // HAVE_LOG
+  }
 }
 
 void DefaultTeXFont::registerAlphabet(AlphabetRegistration* reg) {
@@ -141,7 +148,7 @@ Char DefaultTeXFont::getChar(
   TexStyle style) {
   // find first
   auto i = _textStyleMappings.find(textStyle);
-  if (i == _textStyleMappings.end()) return getDefaultChar(' ', style); // Text style not found
+  if (i == _textStyleMappings.end()) throw ex_text_style_mapping_not_found(textStyle);
   return getChar(c, i->second, style);
 }
 
@@ -193,7 +200,7 @@ Char DefaultTeXFont::getChar(
   // find first
   auto i = _symbolMappings.find(symbolName);
   // no symbol mapping found
-  if (i == _symbolMappings.end()) return getDefaultChar(' ', style); // Symbol not found
+  if (i == _symbolMappings.end()) throw ex_symbol_mapping_not_found(symbolName);
   return getChar(*(i->second), style);
 }
 

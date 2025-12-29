@@ -174,8 +174,6 @@ public:
   /** Push an atom to back */
   void add(const sptr<Atom>& atom);
 
-  AtomKind kind() const override { return AtomKind::Row; }
-
   sptr<Box> createBox(Environment& env) override;
 
   void setPreviousAtom(const sptr<Dummy>& prev) override;

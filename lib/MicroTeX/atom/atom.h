@@ -35,14 +35,6 @@ public:
   Atom() = default;
 
   /**
-   * Get the kind of this atom for type identification.
-   * This method is used to replace dynamic_cast with static_cast for performance.
-   *
-   * @return the kind of this atom
-   */
-  virtual AtomKind kind() const { return AtomKind::Basic; }
-
-  /**
    * Get the type of the leftermost child atom. Most atoms have no child
    * atoms, so the "left type" and the "right type" are the same: the atom's
    * type. This also is the default implementation. But Some atoms are

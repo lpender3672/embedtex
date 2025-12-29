@@ -126,8 +126,7 @@ public:
 
   inline TeXRenderBuilder& setIsMaxWidth(bool i) {
     if (_widthUnit == UnitType::none) {
-      // Cannot set 'isMaxWidth' without having specified a width - ignoring
-      return *this;
+      throw ex_invalid_state("Cannot set 'isMaxWidth' without having specified a width!");
     }
     if (i) {
       // Currently isMaxWidth==true does not work with
@@ -161,8 +160,7 @@ public:
 
   inline TeXRenderBuilder& setLineSpace(UnitType unit, float space) {
     if (_widthUnit == UnitType::none) {
-      // Cannot set line space without having specified a width - ignoring
-      return *this;
+      throw ex_invalid_state("Cannot set line space without having specified a width!");
     }
     _lineSpace = space;
     _lineSpaceUnit = unit;

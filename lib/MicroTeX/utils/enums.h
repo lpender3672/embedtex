@@ -35,68 +35,6 @@ enum class SpaceType : i8 {
   none = 0
 };
 
-/** Atom kind for type identification (used to replace dynamic_cast) */
-enum class AtomKind : i8 {
-  Basic,
-  Char,
-  Row,
-  Fraction,
-  Radical,
-  Scripts,
-  Accent,
-  CumulativeScripts,
-  AccentedAtom,
-  SymbolAtom,
-  CharSymbol,
-  VRowAtom,
-  BigOperator,
-  UnderOver,
-  SideSets,
-  FixedChar,
-  CharAtom,
-  Empty,
-  Placeholder,
-  TextRendering,
-  Smashed,
-  Scale,
-  Math,
-  Hline,
-  UnderScore,
-  Middle,
-  Color,
-  Roman,
-  Phantom,
-  Typed,
-  OverUnderDelimiter,
-  Space,
-  BreakMark,
-  CellSpecifier,
-  BigDelimiter
-};
-
-/** Box kind for type identification (used to replace dynamic_cast) */
-enum class BoxKind : i8 {
-  Basic,
-  CharBox,
-  HBox,
-  VBox,
-  StrutBox,
-  FramedBox,
-  ScaleBox,
-  ColorBox,
-  ShadowBox,
-  OvalBox,
-  RuleBox,
-  TextRenderingBox,
-  DecorBox
-};
-
-/** Font kind for type identification (used to replace dynamic_cast) */
-enum class FontKind : i8 {
-  Basic,
-  TFT
-};
-
 /** Script display type */
 enum class LimitsType : i8 {
   normal,

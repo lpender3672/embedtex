@@ -30,8 +30,6 @@ private:
 public:
   CharSymbol() : _textSymbol(false) {}
 
-  AtomKind kind() const override { return AtomKind::CharSymbol; }
-
   /** Mark as text symbol (used by Dummy) */
   inline void markAsTextSymbol() {
     _textSymbol = true;
@@ -70,8 +68,6 @@ public:
   FixedCharAtom() = delete;
 
   explicit FixedCharAtom(const sptr<CharFont>& c) : _cf(c) {}
-
-  AtomKind kind() const override { return AtomKind::FixedChar; }
 
   // FIXME
   // workaround for the MSVS's LNK2019 error
@@ -120,8 +116,6 @@ public:
   inline const std::string& getName() const {
     return _name;
   }
-
-  AtomKind kind() const override { return AtomKind::SymbolAtom; }
 
   sptr<Box> createBox(Environment& env) override;
 
@@ -192,8 +186,6 @@ public:
     return _mathMode;
   }
 
-  AtomKind kind() const override { return AtomKind::CharAtom; }
-
   sptr<Box> createBox(Environment& env) override;
 
   // FIXME
@@ -208,7 +200,7 @@ public:
 
 /** An empty atom just to add a mark. */
 class BreakMarkAtom : public Atom {
-public:  AtomKind kind() const override { return AtomKind::BreakMark; }
+public:
   sptr<Box> createBox(Environment& env) override;
 
   __decl_clone(BreakMarkAtom)

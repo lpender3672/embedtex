@@ -86,9 +86,9 @@ void DefaultTeXFontParser::processCharElement(const XMLElement* e, __BasicInfo& 
   while (x != nullptr) {
     auto it = _charChildParsers.find(x->Name());
     if (it == _charChildParsers.end()) {
-      // Unknown child element - skip it
-      x = x->NextSiblingElement();
-      continue;
+      throw ex_xml_parse(
+          RESOURCE_NAME + ": a <Char-element> has an unknown child element '" +
+          x->Name() + "'!");
     }
     it->second(x, ch, info);
     x = x->NextSiblingElement();
@@ -122,9 +122,11 @@ void DefaultTeXFontParser::parseStyleMappings(
       // find the code mapping
       auto it = _rangeTypeMappings.find(code);
       if (it == _rangeTypeMappings.end()) {
-        // Unknown range name - skip this range
-        range = range->NextSiblingElement("MapRange");
-        continue;
+        throw ex_xml_parse(
+            RESOURCE_NAME,
+            "MapRange",
+            "code",
+            "contains an unknown 'range name' '" + code + "'!");
       }
       CharFont* f = nullptr;
       if (boldFontId.empty()) {
@@ -193,7 +195,7 @@ void DefaultTeXFontParser::parseFontDescriptions(const string& file) {
 
   XMLDocument doc(true, COLLAPSE_WHITESPACE);
   const int   err = doc.LoadFile(file.c_str());
-  if (err != XML_SUCCESS) return; // Cannot open file
+  if (err != XML_SUCCESS) throw ex_xml_parse("Cannot open file " + file + "!");
   // get root
   const XMLElement* font = doc.RootElement();
 
@@ -207,7 +209,7 @@ void DefaultTeXFontParser::parseFontDescriptions(const string& file) {
   if (__id(fontId) < 0) {
     FontInfo::__predefine_name(fontId);
   } else {
-    return; // Font already loaded
+    throw ex_font_loaded("Font " + fontId + " is already loaded!");
   }
 
   const int __id = __id(fontId);
@@ -326,7 +328,7 @@ void DefaultTeXFontParser::sortBasicInfo(__BasicInfo& bi) {
 void DefaultTeXFontParser::parseSymbolMappings(
     map<string, CharFont*>& res) {
   const XMLElement* mapping = _root->FirstChildElement("SymbolMappings");
-  if (mapping == nullptr) return; // SymbolMappings not found
+  if (mapping == nullptr) throw ex_xml_parse(RESOURCE_NAME, "SymbolMappings");
 
 #ifdef HAVE_LOG
   __dbg("parse SymbolMappings, tag name:%s <should be SymbolMappings>\n", mapping->Name());
@@ -349,11 +351,8 @@ void DefaultTeXFontParser::parseSymbolMappings(
 #endif
 
     int err = doc.LoadFile(path.c_str());
-    if (err != XML_SUCCESS) {
-      // Cannot open file - skip this symbol
-      mapping = mapping->NextSiblingElement("Mapping");
-      continue;
-    }
+    if (err != XML_SUCCESS)
+      throw ex_xml_parse("Cannot open the file '" + path + "'!");
     const XMLElement* symbol = doc.RootElement()->FirstChildElement("SymbolMapping");
 
 #ifdef HAVE_LOG
@@ -399,9 +398,11 @@ string* DefaultTeXFontParser::parseDefaultTextStyleMappins() {
     const string code = getAttrValueAndCheckIfNotNull("code", mapping);
     auto         mit  = _rangeTypeMappings.find(code);
     if (mit == _rangeTypeMappings.end()) {
-      // Unknown range name - skip this mapping
-      mapping = mapping->NextSiblingElement("MapStyle");
-      continue;
+      throw ex_xml_parse(
+          RESOURCE_NAME,
+          "MapStyle",
+          "code",
+          "contains an unknown 'range name' '" + code + "'!");
     }
     int codeMapping = mit->second;
     // get mapped style and check
@@ -409,19 +410,21 @@ string* DefaultTeXFontParser::parseDefaultTextStyleMappins() {
 
     const auto& it = _parsedTextStyles.find(textStyleName);
     if (it == _parsedTextStyles.end()) {
-      // Unknown text style - skip this mapping
-      mapping = mapping->NextSiblingElement("MapStyle");
-      continue;
+      throw ex_xml_parse(
+          RESOURCE_NAME,
+          "Mapstyle",
+          "textStyle",
+          "contains an unknown 'range name' '" + textStyleName + "'!");
     }
 
     const auto& charFonts = it->second;
     // now check if the range is defined within the mapped text style
     int index = codeMapping;
-    if (charFonts[index] == nullptr) {
-      // No mapping for range - skip this mapping
-      mapping = mapping->NextSiblingElement("MapStyle");
-      continue;
-    }
+    if (charFonts[index] == nullptr)
+      throw ex_xml_parse(
+          RESOURCE_NAME + ": the default text style mapping '" +
+          textStyleName + "' for the range '" + code +
+          "' contains no mapping for that range!");
 
     res[index] = textStyleName;
     mapping    = mapping->NextSiblingElement("MapStyle");
@@ -436,7 +439,7 @@ map<string, vector<CharFont*>> DefaultTeXFontParser::parseTextStyleMappings() {
 
 void DefaultTeXFontParser::parseParameters(map<string, float>& res) {
   const XMLElement* parameters = _root->FirstChildElement("Parameters");
-  if (parameters == nullptr) return; // Parameters not found
+  if (parameters == nullptr) throw ex_xml_parse(RESOURCE_NAME, "Parameter");
 
   const XMLAttribute* attr = parameters->FirstAttribute();
   // iterate all attributes
@@ -451,7 +454,7 @@ void DefaultTeXFontParser::parseParameters(map<string, float>& res) {
 
 void DefaultTeXFontParser::parseGeneralSettings(map<string, float>& res) {
   const XMLElement* settings = _root->FirstChildElement("GeneralSettings");
-  if (settings == nullptr) return; // GeneralSettings not found
+  if (settings == nullptr) throw ex_xml_parse(RESOURCE_NAME, "GeneralSettings");
   int index = 0;
 
   const string& v1 = getAttrValueAndCheckIfNotNull("mufontid", settings);

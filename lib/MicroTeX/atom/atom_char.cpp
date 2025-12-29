@@ -33,9 +33,10 @@ sptr<Box> SymbolAtom::createBox(Environment& env) {
     auto it = Formula::_symbolTextMappings.find(toupper(_unicode));
     if (it != Formula::_symbolFormulaMappings.end()) {
       const string& name = it->second;
-      // Try to get char, ignore if not found
-      auto cx = sptrOf<CharBox>(tf.getChar(name, style));
-      if (cx) cb = sptrOf<ScaleBox>(cx, 0.8f, 0.8f);
+      try {
+        auto cx = sptrOf<CharBox>(tf.getChar(name, style));
+        cb = sptrOf<ScaleBox>(cx, 0.8f, 0.8f);
+      } catch (ex_symbol_mapping_not_found& e) {}
     }
   }
   if (_type == AtomType::bigOperator) {
@@ -65,7 +66,7 @@ void SymbolAtom::addSymbolAtom(const sptr<SymbolAtom>& sym) {
 
 sptr<SymbolAtom> SymbolAtom::get(const string& name) {
   auto it = _symbols.find(name);
-  if (it == _symbols.end()) return nullptr; // Symbol not found
+  if (it == _symbols.end()) throw ex_symbol_not_found(name);
   return it->second;
 }
 

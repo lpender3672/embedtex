@@ -21,8 +21,6 @@ public:
   /** Get the font size */
   virtual float getSize() const = 0;
 
-  virtual FontKind kind() const = 0;
-
   /**
    * Derive font from current font with given style
    *

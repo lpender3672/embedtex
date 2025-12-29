@@ -28,8 +28,6 @@ class Formula;
 /** An empty atom */
 class EmptyAtom : public Atom {
 public:
-  AtomKind kind() const override { return AtomKind::Empty; }
-
   sptr<Box> createBox(Environment& env) override {
     return sptrOf<StrutBox>(0.f, 0.f, 0.f, 0.f);
   }
@@ -45,8 +43,6 @@ private:
 public:
   PlaceholderAtom(float width, float height, float depth, float shift)
     : _width(width), _height(height), _depth(depth), _shift(shift) {}
-
-  AtomKind kind() const override { return AtomKind::Placeholder; }
 
   sptr<Box> createBox(Environment& env) override {
     return sptrOf<StrutBox>(_width, _height, _depth, _shift);
@@ -71,8 +67,6 @@ public:
   TextRenderingAtom(std::wstring str, const FontInfos* info)
     : _str(std::move(str)), _type(0), _infos(info) {}
 
-  AtomKind kind() const override { return AtomKind::TextRendering; }
-
   sptr<Box> createBox(Environment& env) override;
 
   __decl_clone(TextRenderingAtom)
@@ -94,8 +88,6 @@ public:
   }
 
   explicit SmashedAtom(const sptr<Atom>& a) : _atom(a), _h(true), _d(true) {}
-
-  AtomKind kind() const override { return AtomKind::Smashed; }
 
   sptr<Box> createBox(Environment& env) override {
     sptr<Box> b = _atom->createBox(env);
@@ -125,8 +117,6 @@ public:
 
   ScaleAtom(const sptr<Atom>& base, float scale) : ScaleAtom(base, scale, scale) {}
 
-  AtomKind kind() const override { return AtomKind::Scale; }
-
   AtomType leftType() const override { return _base->leftType(); }
 
   AtomType rightType() const override { return _base->rightType(); }
@@ -148,8 +138,6 @@ public:
   MathAtom(const sptr<Atom>& base, TexStyle style) noexcept
     : _base(base), _style(style) {}
 
-  AtomKind kind() const override { return AtomKind::Math; }
-
   sptr<Box> createBox(Environment& env) override;
 
   __decl_clone(MathAtom)
@@ -169,8 +157,6 @@ public:
   inline void setShift(float s) { _shift = s; }
 
   inline void setColor(color c) { _color = c; }
-
-  AtomKind kind() const override { return AtomKind::Hline; }
 
   sptr<Box> createBox(Environment& env) override;
 
@@ -198,8 +184,6 @@ public:
 
   sptr<Atom> getScriptsAtom() const;
 
-  AtomKind kind() const override { return AtomKind::CumulativeScripts; }
-
   sptr<Box> createBox(Environment& env) override;
 
   __decl_clone(CumulativeScriptsAtom)
@@ -212,8 +196,6 @@ private:
 
 public:
   UnderScoreAtom() = default;
-
-  AtomKind kind() const override { return AtomKind::UnderScore; }
 
   sptr<Box> createBox(Environment& env) override;
 
@@ -233,8 +215,6 @@ public:
 
   explicit MiddleAtom(const sptr<Atom>& a)
     : _base(a), _box(new StrutBox(0, 0, 0, 0)) {}
-
-  AtomKind kind() const override { return AtomKind::Middle; }
 
   sptr<Box> createBox(Environment& env) override {
     return _box;
@@ -284,8 +264,6 @@ public:
   /** Add an atom at the tail */
   void append(const sptr<Atom>& el);
 
-  AtomKind kind() const override { return AtomKind::VRowAtom; }
-
   sptr<Box> createBox(Environment& env) override;
 
   __decl_clone(VRowAtom)
@@ -305,8 +283,6 @@ public:
   ColorAtom() = delete;
 
   ColorAtom(const sptr<Atom>& atom, color bg, color c);
-
-  AtomKind kind() const override { return AtomKind::Color; }
 
   sptr<Box> createBox(Environment& env) override;
 
@@ -344,8 +320,6 @@ public:
 
   explicit RomanAtom(const sptr<Atom>& base) : _base(base) {}
 
-  AtomKind kind() const override { return AtomKind::Roman; }
-
   sptr<Box> createBox(Environment& env) override;
 
   __decl_clone(RomanAtom)
@@ -364,8 +338,6 @@ public:
   explicit PhantomAtom(const sptr<Atom>& el);
 
   PhantomAtom(const sptr<Atom>& el, bool w, bool h, bool d);
-
-  AtomKind kind() const override { return AtomKind::Phantom; }
 
   AtomType leftType() const override {
     return _elements->leftType();
@@ -407,8 +379,6 @@ public:
     _atom->_limitsType = _limitsType;
     return _atom;
   }
-
-  AtomKind kind() const override { return AtomKind::Typed; }
 
   sptr<Box> createBox(Environment& env) override {
     return _atom->createBox(env);
@@ -478,8 +448,6 @@ public:
    *      if the symbol is not defined as an accent ('acc')
    */
   AccentedAtom(const sptr<Atom>& base, const sptr<Formula>& acc);
-
-  AtomKind kind() const override { return AtomKind::AccentedAtom; }
 
   sptr<Box> createBox(Environment& env) override;
 
@@ -556,8 +524,6 @@ public:
     _overSmall = oversmall;
   }
 
-  AtomKind kind() const override { return AtomKind::UnderOver; }
-
   AtomType leftType() const override {
     return _base->leftType();
   }
@@ -594,8 +560,6 @@ public:
 
   ScriptsAtom(const sptr<Atom>& base, const sptr<Atom>& sub, const sptr<Atom>& sup, bool left)
     : _base(base), _sub(sub), _sup(sup), _align(left ? Alignment::left : Alignment::right) {}
-
-  AtomKind kind() const override { return AtomKind::Scripts; }
 
   AtomType leftType() const override {
     return _base == nullptr ? _type : _base->leftType();
@@ -667,8 +631,6 @@ public:
     _limitsSet = true;
   }
 
-  AtomKind kind() const override { return AtomKind::BigOperator; }
-
   sptr<Box> createBox(Environment& env) override;
 
   __decl_clone(BigOperatorAtom)
@@ -686,8 +648,6 @@ public:
     _type = AtomType::bigOperator;
     _limitsType = LimitsType::noLimits;
   }
-
-  AtomKind kind() const override { return AtomKind::SideSets; }
 
   sptr<Box> createBox(Environment& env) override;
 
@@ -731,8 +691,6 @@ public:
   inline bool isOver() {
     return _over;
   }
-
-  AtomKind kind() const override { return AtomKind::OverUnderDelimiter; }
 
   sptr<Box> createBox(Environment& env) override;
 

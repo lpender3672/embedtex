@@ -121,10 +121,8 @@ void TeXParser::reset(const wstring& latex) {
 
 sptr<Atom> TeXParser::popLastAtom() const {
   auto a = _formula->_root;
-  if (a->kind() == AtomKind::Row) {
-    auto* ra = static_cast<RowAtom*>(a.get());
-    return ra->popLastAtom();
-  }
+  auto* ra = dynamic_cast<RowAtom*>(a.get());
+  if (ra != nullptr) return ra->popLastAtom();
   _formula->_root = nullptr;
   return a;
 }
@@ -140,7 +138,7 @@ void TeXParser::addAtom(const sptr<Atom>& atom) const {
 }
 
 void TeXParser::addRow() const {
-  if (!_arrayMode) return; // Not in array mode
+  if (!_arrayMode) throw ex_parse("Can not add row in none-array mode!");
   ((ArrayFormula*) _formula)->addRow();
 }
 
@@ -182,8 +180,7 @@ wstring TeXParser::getGroup(wchar_t open, wchar_t close) {
     if (group != 0) return _latex.substr(spos + 1, _pos - spos - 1);
     return _latex.substr(spos + 1, _pos - spos - 2);
   }
-  // Missing opening bracket - return empty
-  return L"";
+  throw ex_parse("Missing '" + tostring((char) open) + "'!");
 }
 
 wstring TeXParser::getGroup(const wstring& open, const wstring& close) {
@@ -249,8 +246,7 @@ wstring TeXParser::getGroup(const wstring& open, const wstring& close) {
 
   if (group != 0) {
     if (_isPartial) return buf;
-    // Parse string not closed correctly - return what we have
-    return buf;
+    throw ex_parse("Parse string not closed correctly!");
   }
 
   return buf.substr(0, buf.length() - _pos + startC);
@@ -298,10 +294,7 @@ wstring TeXParser::getOverArgument() {
   }
 
   // end of string reached, bu not processed properly
-  if (ogroup >= 2) {
-    // Illegal end - return empty string
-    return L"";
-  }
+  if (ogroup >= 2) throw ex_parse("Illegal end, missing '}'!");
 
   wstring str;
   if (ogroup == 0) {
@@ -409,9 +402,7 @@ wstring TeXParser::forwardBalancedGroup() {
     }
   }
   if (closing != 0) {
-    // Found closing without opening - ignore
-    _pos = i;
-    return L"";
+    throw ex_parse("Found a closing '}' without an opening '{'!");
   }
   const wstring& sub = _latex.substr(_pos, i - _pos);
   _pos = i;
@@ -426,17 +417,21 @@ void TeXParser::getOptsArgs(int argc, int opts, Args& args) {
 
   auto getOpts = [&]() {
     int j = argc + 1;
-    for (; j < argc + 11; j++) {
-      skipWhiteSpace();
-      args[j] = getGroup(L_BRACK, R_BRACK);
-      if (args[j].empty()) break;
+    try {
+      for (; j < argc + 11; j++) {
+        skipWhiteSpace();
+        args[j] = getGroup(L_BRACK, R_BRACK);
+      }
+    } catch (ex_parse& e) {
+      args[j] = L"";
     }
   };
 
   auto getArg = [&](int i) { // NOLINT(misc-no-recursion)
     skipWhiteSpace();
-    args[i] = getGroup(L_GROUP, R_GROUP);
-    if (args[i].empty()) {
+    try {
+      args[i] = getGroup(L_GROUP, R_GROUP);
+    } catch (ex_parse& e) {
       if (_latex[_pos] != '\\') {
         args[i] = towstring(_latex[_pos]);
         _pos++;
@@ -490,16 +485,17 @@ sptr<Atom> TeXParser::processEscape() {
   }
 
   const string cmd = wide2utf8(command);
-  auto formula = Formula::get(command);
-  if (formula) return formula->_root;
-  
-  auto symbol = SymbolAtom::get(cmd);
-  if (symbol) return symbol;
+  try {
+    return Formula::get(command)->_root;
+  } catch (ex_formula_not_found& e) {
+    try {
+      return SymbolAtom::get(cmd);
+    } catch (ex_symbol_not_found& ex) {}
+  }
 
   // not a valid command or symbol or predefined Formula found
   if (!_isPartial) {
-    // Unknown symbol - return nullptr
-    return nullptr;
+    throw ex_parse("Unknown symbol or command or predefined Formula: '" + cmd + "'");
   }
   // Show invalid command
   auto rm = sptrOf<RomanAtom>(Formula(L"\\backslash " + command)._root);
@@ -554,12 +550,12 @@ sptr<Atom> TeXParser::getScripts(wchar_t first) {
   }
 
   sptr<Atom> atom;
+  RowAtom* rm = nullptr;
   if (_formula->_root == nullptr) {
     // If there's no root exists, passing a null atom to ScriptsAtom as base is OK,
     // the ScriptsAtom will handle it
     return sptrOf<ScriptsAtom>(nullptr, sub, sup);
-  } else if (_formula->_root->kind() == AtomKind::Row) {
-    auto* rm = static_cast<RowAtom*>(_formula->_root.get());
+  } else if ((rm = dynamic_cast<RowAtom*>(_formula->_root.get()))) {
     atom = rm->popLastAtom();
   } else {
     atom = _formula->_root;
@@ -567,8 +563,8 @@ sptr<Atom> TeXParser::getScripts(wchar_t first) {
   }
 
   // Check if previous atom is CumulativeScriptsAtom
-  if (atom->kind() == AtomKind::CumulativeScripts) {
-    auto* ca = static_cast<CumulativeScriptsAtom*>(atom.get());
+  auto* ca = dynamic_cast<CumulativeScriptsAtom*>(atom.get());
+  if (ca != nullptr) {
     ca->addSubscript(sub);
     ca->addSuperscript(sup);
     return atom;
@@ -578,8 +574,8 @@ sptr<Atom> TeXParser::getScripts(wchar_t first) {
     return sptrOf<BigOperatorAtom>(atom, sub, sup);
   }
 
-  if (atom->kind() == AtomKind::OverUnderDelimiter) {
-    auto* del = static_cast<OverUnderDelimiter*>(atom.get());
+  auto* del = dynamic_cast<OverUnderDelimiter*>(atom.get());
+  if (del != nullptr) {
     if (del->isOver()) {
       if (sup != nullptr) {
         del->addScript(sup);
@@ -701,9 +697,14 @@ void TeXParser::inflateNewCmd(wstring& cmd, Args& args, int& pos) {
   auto mac = MacroInfo::get(cmd);
   getOptsArgs(mac->_argc, mac->_posOpts, args);
   args[0] = cmd;
-  mac->invoke(*this, args);
-  // The last element is the returned value (after inflated macro)
-  _latex.replace(pos, _pos - pos, args.back());
+  try {
+    mac->invoke(*this, args);
+    // The last element is the returned value (after inflated macro)
+    _latex.replace(pos, _pos - pos, args.back());
+  } catch (ex_parse& e) {
+    if (!_isPartial) throw;
+    pos += cmd.length() + 1;
+  }
   _len = _latex.length();
   _pos = pos;
 }
@@ -713,8 +714,12 @@ void TeXParser::inflateEnv(wstring& cmd, Args& args, int& pos) {
   wstring env = args[1] + L"@env";
   auto mac = MacroInfo::get(env);
   if (mac == nullptr) {
-    // Unknown environment - ignore
-    return;
+    throw ex_parse(
+      "Unknown environment: "
+      + wide2utf8(args[1])
+      + " at position " + tostring(getLine())
+      + ":" + tostring(getCol())
+    );
   }
   vector<wstring> optargs;
   getOptsArgs(mac->_argc - 1, 0, optargs);
@@ -741,7 +746,11 @@ void TeXParser::preprocess() {
       case ESCAPE: {
         spos = _pos;
         wstring cmd = getCommand();
-        preprocess(cmd, args, spos);
+        try {
+          preprocess(cmd, args, spos);
+        } catch (ex_parse& e) {
+          if (!_isPartial) throw;
+        }
         args.clear();
         break;
       }
@@ -830,9 +839,8 @@ void TeXParser::parse() {
       case ESCAPE: {
         sptr<Atom> atom = processEscape();
         _formula->add(atom);
-        if (_arrayMode && atom->kind() == AtomKind::Hline) {
-          ((ArrayFormula*) _formula)->addRow();
-        }
+        auto* h = dynamic_cast<HlineAtom*>(atom.get());
+        if (_arrayMode && h != nullptr) ((ArrayFormula*) _formula)->addRow();
         if (_insertion) _insertion = false;
       }
         break;
@@ -846,8 +854,7 @@ void TeXParser::parse() {
         _group--;
         _pos++;
         if (_group == -1) {
-          // Found closing without opening - ignore
-          return;
+          throw ex_parse("Found a closing '}' without an opening '{'!");
         }
         // End of a group
         return;
@@ -867,9 +874,7 @@ void TeXParser::parse() {
         break;
       case '&': {
         if (!_arrayMode) {
-          // Character & only in array mode - ignore
-          _pos++;
-          break;
+          throw ex_parse("Character '&' is only available in array mode!");
         }
         ((ArrayFormula*) _formula)->addCol();
         _pos++;
@@ -986,8 +991,9 @@ sptr<Atom> TeXParser::convertCharacter(wchar_t c, bool oneChar) {
           _latex.substr(start, en - start + 1), fontInfos);
       }
 
-      if (!_isPartial) {
-        // Unknown character - use placeholder
+      if (!_isPartial)
+        throw ex_parse("Unknown character : '" + tostring(c) + "'");
+      else {
         if (_hideUnknownChar) return nullptr;
         sptr<Atom> rm(new RomanAtom(
           Formula(L"\\text{(unknown char " + towstring((int) c) + L")}")._root));
@@ -1013,9 +1019,15 @@ sptr<Atom> TeXParser::convertCharacter(wchar_t c, bool oneChar) {
 
       if (sit != Formula::_symbolMappings.end()) {
         string symbolName = sit->second;
-        auto sym = SymbolAtom::get(symbolName);
-        if (sym) return sym;
-        // Symbol not found - return nullptr
+        try {
+          return SymbolAtom::get(symbolName);
+        } catch (ex_symbol_not_found& e) {
+          throw ex_parse(
+            "The character '" + tostring(c) +
+            "' was mapped to an unknown symbol with the name '" + symbolName + "'!",
+            e
+          );
+        }
       }
     }
   } else {

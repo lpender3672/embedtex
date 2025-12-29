@@ -31,10 +31,8 @@ void FencedAtom::center(Box& b, float axis) {
 sptr<Box> FencedAtom::createBox(Environment& env) {
   TeXFont& tf = *(env.getTeXFont());
   // can not break
-  if (_base->kind() == AtomKind::Row) {
-    auto* ra = static_cast<RowAtom*>(_base.get());
-    ra->setBreakable(false);
-  }
+  auto* ra = dynamic_cast<RowAtom*>(_base.get());
+  if (ra != nullptr) ra->setBreakable(false);
   auto content = _base->createBox(env);
   float shortfall = DELIMITER_SHORTFALL * SpaceAtom::getFactor(UnitType::point, env);
   float axis = tf.getAxisHeight(env.getStyle());
@@ -45,8 +43,8 @@ sptr<Box> FencedAtom::createBox(Environment& env) {
 
   if (!_middle.empty()) {
     for (const auto& atom : _middle) {
-      if (atom->_base->kind() == AtomKind::SymbolAtom) {
-        auto* sym = static_cast<SymbolAtom*>(atom->_base.get());
+      auto* sym = dynamic_cast<SymbolAtom*>(atom->_base.get());
+      if (sym != nullptr) {
         auto b = DelimiterFactory::create(sym->getName(), env, minh);
         center(*b, axis);
         atom->_box = b;
@@ -63,17 +61,14 @@ sptr<Box> FencedAtom::createBox(Environment& env) {
   }
 
   // glue between left delimiter and content (if not whitespace)
-  if (_base->kind() != AtomKind::Space) {
-    hb->add(Glue::get(AtomType::opening, _base->leftType(), env));
-  }
+  auto* sp = dynamic_cast<SpaceAtom*>(_base.get());
+  if (sp == nullptr) hb->add(Glue::get(AtomType::opening, _base->leftType(), env));
 
   // add content
   hb->add(content);
 
   // glue between right delimiter and content (if not whitespace)
-  if (_base->kind() != AtomKind::Space) {
-    hb->add(Glue::get(_base->rightType(), AtomType::closing, env));
-  }
+  if (sp == nullptr) hb->add(Glue::get(_base->rightType(), AtomType::closing, env));
 
   // right delimiter
   if (_right != nullptr) {

@@ -29,8 +29,6 @@ private:
 public:
   SpaceAtom() noexcept: _blankSpace(true) {}
 
-  AtomKind kind() const override { return AtomKind::Space; }
-
   explicit SpaceAtom(SpaceType type) noexcept
     : _blankSpace(true), _blankType(type) {}
 
