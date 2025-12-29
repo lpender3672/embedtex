@@ -58,13 +58,16 @@ void setup() {
     // You'll need the res/ folder from MicroTeX with fonts
     // LaTeX::init("path/to/res");  // Adjust path for your setup
     LaTeX::init("/res");
+
+    Serial.println("Parsing LaTeX...");
     
+    // Convert the code to a paintable object (TeXRender)
     auto render = LaTeX::parse(
-        L"1+2",
-        TFT_WIDTH,
-        32,       // bigger font
-        32,       // bigger line space
-        0xFF000000
+         L"\\text{Hello world}",   // LaTeX code to parse
+        TFT_WIDTH,    // logical width of the graphics context (in pixel)
+        32,     // font size (in point)
+        16,     // space between 2 lines (in pixel)
+        BLACK   // foreground color
     );
     
     if (render) {
@@ -74,7 +77,7 @@ void setup() {
         ofr.setSerial(Serial);
         ofr.setDrawer(tft);
         Graphics2D_tft g2d(&tft, &ofr);
-        render->draw(g2d, 100, 0);  // Draw at position (0, 0)
+        render->draw(g2d, 100, 50);  // Draw at position (0, 0)
     } else {
         Serial.println("Failed to parse LaTeX");
     }
