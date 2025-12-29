@@ -40,10 +40,6 @@
 #include "vcruntime.h"
 #endif
 
-#if (__cplusplus >= 201703L) || (defined(_MSC_VER) && defined(_HAS_CXX17) && _HAS_CXX17)
-#define CLATEX_CXX17 1
-#else
 #define CLATEX_CXX17 0
-#endif
 
 #endif  // CONFIG_H_INCLUDED

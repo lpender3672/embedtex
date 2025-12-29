@@ -1,6 +1,7 @@
 #include "graphic/graphic_tft.h"
 #include <cmath>
 #include <cstring>
+#include <algorithm>
 #include <Arduino.h>
 
 namespace tex {
@@ -15,10 +16,8 @@ sptr<Font> Font::_create(const std::string& family, int style, float size) {
 }
 
 sptr<TextLayout> TextLayout::create(const std::wstring& src, const sptr<Font>& font) {
-    sptr<Font_tft> f;
-    if (font && font->kind() == FontKind::TFT) {
-        f = std::static_pointer_cast<Font_tft>(font);
-    } else {
+    auto f = std::static_pointer_cast<Font_tft>(font);
+    if (!f) {
         f = sptrOf<Font_tft>("", PLAIN, 12.f);
     }
     return sptrOf<TextLayout_tft>(src, f);
@@ -29,54 +28,23 @@ sptr<TextLayout> TextLayout::create(const std::wstring& src, const sptr<Font>& f
 /**************************************************************************************************/
 
 Font_tft::Font_tft(const std::string& family, int style, float size)
-    : _family(family), _style(style), _size(size) {
-    // Map size to TFT_eSPI font number (rough approximation)
-    if (size <= 10) _tft_font = 1;
-    else if (size <= 16) _tft_font = 2;
-    else if (size <= 24) _tft_font = 4;
-    else _tft_font = 4;
-}
+    : _family(family), _file(""), _style(style), _size(size) {}
 
 Font_tft::Font_tft(const std::string& file, float size)
-    : _family(file), _style(PLAIN), _size(size) {
-    if (size <= 10) _tft_font = 1;
-    else if (size <= 16) _tft_font = 2;
-    else if (size <= 24) _tft_font = 4;
-    else _tft_font = 4;
-}
-
-std::string Font_tft::getFamily() const {
-    return _family;
-}
-
-int Font_tft::getStyle() const {
-    return _style;
-}
-
-float Font_tft::getSize() const {
-    return _size;
-}
+    : _family(""), _file(file), _style(PLAIN), _size(size) {}
 
 sptr<Font> Font_tft::deriveFont(int style) const {
-    return sptrOf<Font_tft>(_family, style, _size);
+    auto f = sptrOf<Font_tft>(_family, style, _size);
+    return f;
 }
 
 bool Font_tft::operator==(const Font& f) const {
-    if (f.kind() != FontKind::TFT) return false;
     const Font_tft* other = static_cast<const Font_tft*>(&f);
-    return _family == other->_family && _style == other->_style && _size == other->_size;
+    return _file == other->_file && _size == other->_size;
 }
 
 bool Font_tft::operator!=(const Font& f) const {
     return !(*this == f);
-}
-
-sptr<Font> Font_tft::create(const std::string& file, float size) {
-    return sptrOf<Font_tft>(file, size);
-}
-
-sptr<Font> Font_tft::_create(const std::string& family, int style, float size) {
-    return sptrOf<Font_tft>(family, style, size);
 }
 
 /**************************************************************************************************/
@@ -102,27 +70,85 @@ void TextLayout_tft::draw(Graphics2D& g2, float x, float y) {
     g2.drawText(_text, x, y);
 }
 
-sptr<TextLayout> TextLayout_tft::create(const std::wstring& src, const sptr<Font>& font) {
-    sptr<Font_tft> f;
-    if (font && font->kind() == FontKind::TFT) {
-        f = std::static_pointer_cast<Font_tft>(font);
-    } else {
-        f = sptrOf<Font_tft>("", PLAIN, 12.f);
-    }
-    return sptrOf<TextLayout_tft>(src, f);
-}
-
 /**************************************************************************************************/
 // Graphics2D_tft implementation
 /**************************************************************************************************/
 
-Graphics2D_tft::Graphics2D_tft(TFT_eSPI* tft)
+
+Graphics2D_tft::Graphics2D_tft(TFT_eSPI* tft, OpenFontRender* ofr)
     : _default_font("", PLAIN, 12.f),
       _tft(tft),
+      _ofr(ofr),
       _color(BLACK),
       _font(&_default_font),
       _sx(1.f), _sy(1.f),
       _tx(0.f), _ty(0.f) {}
+
+void Graphics2D_tft::ensureFontLoaded() {
+    if (!_font) return;
+
+    if (!_ofr) return;
+    
+    std::string file = _font->getFile();
+    if (file.empty() || file == _currentFontFile) return;
+    
+    // Ensure leading slash for SD card
+    std::string sdPath = file;
+    if (sdPath[0] != '/') {
+        sdPath = "/" + sdPath;
+    }
+    
+    Serial.printf("Loading font: %s\n", sdPath.c_str());
+
+    const FT_Error err = _ofr->loadFont(sdPath.c_str());
+    if (err == 0) {
+        _currentFontFile = file;
+        _currentFontSizePx = 0;
+        _currentAscentPx = 0;
+        Serial.println("Font loaded OK");
+    } else {
+        Serial.printf("Failed to load font (err=%d): %s\n", static_cast<int>(err), sdPath.c_str());
+    }
+}
+
+void Graphics2D_tft::ensureFontMetrics(unsigned int fontSizePx) {
+    if (!_ofr) return;
+    if (fontSizePx == 0) fontSizePx = 1;
+    if (fontSizePx == _currentFontSizePx && _currentAscentPx > 0) return;
+
+    // OpenFontRender's public API does not expose ascender directly.
+    // Derive an ascent in pixels using its own bounding boxes.
+    //
+    // For Align::BottomLeft at (0,0), OpenFontRender internally shifts baseline using descender.
+    // This lets us recover a consistent height and ascent approximation.
+    const char* probe = "Hg"; // includes ascender+descender in most Latin fonts
+    const FT_BBox bottom = _ofr->calculateBoundingBox(0, 0, fontSizePx, Align::BottomLeft, Layout::Horizontal, probe);
+    const FT_BBox top = _ofr->calculateBoundingBox(0, 0, fontSizePx, Align::TopLeft, Layout::Horizontal, probe);
+
+    const int32_t bottomHeight = std::abs(static_cast<int32_t>(bottom.yMax - bottom.yMin));
+    const int32_t topHeight = std::abs(static_cast<int32_t>(top.yMax - top.yMin));
+    const int32_t height = (bottomHeight > 0) ? bottomHeight : topHeight;
+
+    // A reasonable default if the bbox math ends up odd for a given font.
+    int32_t ascent = (height > 0) ? (height * 8) / 10 : static_cast<int32_t>(fontSizePx);
+
+    // Try to compute ascent from bottom-aligned bbox shape.
+    // With the library's internal math, bottom.yMin tends to be roughly (-height).
+    if (bottomHeight > 0) {
+        const int32_t hFromBottom = -static_cast<int32_t>(bottom.yMin);
+        if (hFromBottom > 0 && hFromBottom < 4096) {
+            // In typical coordinate conventions, descender is ~ (bottom.yMax / 2).
+            const int32_t desc = static_cast<int32_t>(bottom.yMax) / 2;
+            const int32_t ascCandidate = hFromBottom + desc;
+            if (ascCandidate > 0 && ascCandidate < 4096) {
+                ascent = ascCandidate;
+            }
+        }
+    }
+
+    _currentFontSizePx = fontSizePx;
+    _currentAscentPx = ascent;
+}
 
 uint16_t Graphics2D_tft::colorTo565(color c) const {
     uint8_t r = color_r(c);
@@ -156,13 +182,6 @@ const Font* Graphics2D_tft::getFont() const {
     return _font;
 }
 
-void Graphics2D_tft::setFont(const Font* font) {
-    Serial.printf("setFont called: %p\n", font);
-    if (font && font->kind() == FontKind::TFT) {
-        _font = static_cast<const Font_tft*>(font);
-        _tft->setTextFont(_font->getTftFont());
-    }
-}
 
 void Graphics2D_tft::translate(float dx, float dy) {
     _tx += dx * _sx;
@@ -196,39 +215,54 @@ float Graphics2D_tft::sy() const {
     return _sy;
 }
 
-void Graphics2D_tft::drawChar(wchar_t c, float x, float y) {
-    int px = static_cast<int>((x * _sx) + _tx);
-    int py = static_cast<int>((y * _sy) + _ty);
-    uint16_t col = colorTo565(_color);
-    
-    int textSize = max(1, (int)(_sx / 8));
-    
-    Serial.printf("drawChar: '%c' sx=%.1f textSize=%d at (%d,%d)\n", (char)c, _sx, textSize, px, py);
-    
-    _tft->setTextSize(textSize);
-    
-    if (c < 256) {
-        _tft->drawChar(px, py, static_cast<char>(c), col, TFT_WHITE, textSize);
+void Graphics2D_tft::setFont(const Font* font) {
+    if (font) {
+        _font = static_cast<const Font_tft*>(font);
     }
 }
 
-void Graphics2D_tft::drawText(const std::wstring& t, float x, float y) {
-    Serial.printf("drawText: len=%d at %.1f,%.1f\n", t.length(), x, y);
-
+void Graphics2D_tft::drawChar(wchar_t c, float x, float y) {
     int px = static_cast<int>((x * _sx) + _tx);
     int py = static_cast<int>((y * _sy) + _ty);
-    uint16_t col = colorTo565(_color);
+    
+    ensureFontLoaded();
 
-    _tft->setTextColor(col);
-    _tft->setCursor(px, py);
+    if (!_ofr) return;
+    
+    // MicroTeX renders in TeX-units and applies scale() to convert to pixels.
+    // Use current X scale as the pixel font size, clamped to >= 1.
+    const unsigned int fontSizePx = std::max(1u, static_cast<unsigned int>(std::lround(std::abs(_sx))));
+    _ofr->setFontSize(fontSizePx);
+    _ofr->setFontColor(colorTo565(_color));
 
-    // Convert wstring to narrow string (ASCII subset)
-    for (wchar_t c : t) {
-        if (c < 256) {
-            _tft->print(static_cast<char>(c));
-        } else {
-            _tft->print('?');  // Placeholder for unsupported chars
-        }
+    // MicroTeX's y is baseline-aligned. OpenFontRender's default alignment treats y as a
+    // text-box anchor (TopLeft), shifting internally by ascender. Convert baseline->TopLeft.
+    _ofr->setAlignment(Align::TopLeft);
+    ensureFontMetrics(fontSizePx);
+    const int pyTop = py - _currentAscentPx;
+    
+    // Convert wchar to UTF-8 for OpenFontRender
+    char utf8[5] = {0};
+    if (c < 0x80) {
+        utf8[0] = static_cast<char>(c);
+    } else if (c < 0x800) {
+        utf8[0] = 0xC0 | (c >> 6);
+        utf8[1] = 0x80 | (c & 0x3F);
+    } else {
+        utf8[0] = 0xE0 | (c >> 12);
+        utf8[1] = 0x80 | ((c >> 6) & 0x3F);
+        utf8[2] = 0x80 | (c & 0x3F);
+    }
+    
+    _ofr->setCursor(px, pyTop);
+    _ofr->printf("%s", utf8);
+}
+
+void Graphics2D_tft::drawText(const std::wstring& t, float x, float y) {
+    for (size_t i = 0; i < t.length(); i++) {
+        drawChar(t[i], x, y);
+        // Note: proper advance would need font metrics
+        x += 0.5f;  // Rough estimate, will need tuning
     }
 }
 

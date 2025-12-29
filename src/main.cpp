@@ -7,6 +7,7 @@ extern "C" {
 }
 
 #include <TFT_eSPI.h>
+#include <SD.h>
 #include "latex.h"
 #include "graphic/graphic_tft.h"
 
@@ -17,6 +18,12 @@ TFT_eSPI tft;
 void setup() {
     Serial.begin(115200);
     while (!Serial) delay(10);
+
+    // Make sure the filesystem that holds /res/fonts/... is mounted.
+    // For Teensy 4.1 built-in SD card slot:
+    if (!SD.begin(BUILTIN_SDCARD)) {
+        Serial.println("SD.begin(BUILTIN_SDCARD) failed");
+    }
 
     SPI.begin();
     SPI.setClockDivider(SPI_CLOCK_DIV64);
@@ -53,18 +60,21 @@ void setup() {
     LaTeX::init("/res");
     
     auto render = LaTeX::parse(
-        L"\\frac{x^2}{y}",
-        720,
-        48,       // bigger font
-        48,       // bigger line space
+        L"1+2",
+        TFT_WIDTH,
+        32,       // bigger font
+        32,       // bigger line space
         0xFF000000
     );
     
     if (render) {
         Serial.printf("Render size: %d x %d\n", render->getWidth(), render->getHeight());
-        
-        Graphics2D_tft g2d(&tft);
-        render->draw(g2d, 10, 50);  // Draw at position (10, 50)
+
+        OpenFontRender ofr;
+        ofr.setSerial(Serial);
+        ofr.setDrawer(tft);
+        Graphics2D_tft g2d(&tft, &ofr);
+        render->draw(g2d, 100, 0);  // Draw at position (0, 0)
     } else {
         Serial.println("Failed to parse LaTeX");
     }

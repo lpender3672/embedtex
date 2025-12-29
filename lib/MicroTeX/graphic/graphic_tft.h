@@ -4,34 +4,31 @@
 #include <string>
 #include "graphic/graphic.h"
 #include <TFT_eSPI.h>
+#include <OpenFontRender.h>
 
 namespace tex {
 
 class Font_tft : public Font {
 private:
     std::string _family;
+    std::string _file;  // TTF file path
     int _style;
     float _size;
-    uint8_t _tft_font;  // TFT_eSPI font number (1-8) or 0 for default
 
 public:
     Font_tft(const std::string& family = "", int style = PLAIN, float size = 1.f);
     Font_tft(const std::string& file, float size);
 
+    std::string getFamily() const { return _family; }
+    std::string getFile() const { return _file; }
+    int getStyle() const { return _style; }
+
+    virtual float getSize() const override { return _size; }
     virtual FontKind kind() const override { return FontKind::TFT; }
-
-    std::string getFamily() const;
-    int getStyle() const;
-    uint8_t getTftFont() const { return _tft_font; }
-
-    virtual float getSize() const override;
     virtual sptr<Font> deriveFont(int style) const override;
     virtual bool operator==(const Font& f) const override;
     virtual bool operator!=(const Font& f) const override;
     virtual ~Font_tft() {}
-
-    static sptr<Font> create(const std::string& file, float size);
-    static sptr<Font> _create(const std::string& family, int style, float size);
 };
 
 /**************************************************************************************************/
@@ -46,8 +43,6 @@ public:
 
     virtual void getBounds(Rect& r) override;
     virtual void draw(Graphics2D& g2, float x, float y) override;
-
-    static sptr<TextLayout> create(const std::wstring& src, const sptr<Font>& font);
 };
 
 /**************************************************************************************************/
@@ -56,17 +51,25 @@ class Graphics2D_tft : public Graphics2D {
 private:
     Font_tft _default_font;
     TFT_eSPI* _tft;
+    OpenFontRender* _ofr;
 
     color _color;
     Stroke _stroke;
     const Font_tft* _font;
     float _sx, _sy;
-    float _tx, _ty;  // translation offset
+    float _tx, _ty;
+    
+    std::string _currentFontFile;  // Track loaded font
+
+    unsigned int _currentFontSizePx = 0;
+    int32_t _currentAscentPx = 0;
 
     uint16_t colorTo565(color c) const;
+    void ensureFontLoaded();
+    void ensureFontMetrics(unsigned int fontSizePx);
 
 public:
-    Graphics2D_tft(TFT_eSPI* tft);
+    Graphics2D_tft(TFT_eSPI* tft, OpenFontRender* ofr);
 
     TFT_eSPI* getTFT() const { return _tft; }
 
@@ -95,4 +98,4 @@ public:
 
 }  // namespace tex
 
-#endif  // GRAPHIC_TFT_H_INCLUDED
+#endif
