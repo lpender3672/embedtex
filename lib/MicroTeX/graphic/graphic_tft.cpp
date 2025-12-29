@@ -143,20 +143,42 @@ void Graphics2D_tft::ensureFontMetrics(unsigned int fontSizePx) {
     if (fontSizePx == 0) fontSizePx = 1;
     if (fontSizePx == _currentFontSizePx && _currentAscentPx > 0) return;
 
-    // OpenFontRender does not expose ascender/descender publicly.
-    // For Align::TopLeft, its internal baseline is computed as (y + ascender).
-    // We therefore need a reasonable ascender estimate in pixels.
+    // OpenFontRender does not expose ascender/descender publicly, but its bounding-box
+    // calculation uses ascender/descender and *alignment-dependent* baseline placement.
+    // We can therefore solve for both metrics without guessing.
     //
-    // IMPORTANT: Do NOT use the full line height (ascender - descender) as ascender,
-    // otherwise glyphs are shifted upward by roughly |descender| and TeX rule lines
-    // (fraction bar, sqrt overbar) appear too low.
-    const char* probe = "Hg"; // tends to exercise ascender+descender
-    const FT_BBox top = _ofr->calculateBoundingBox(0, 0, fontSizePx, Align::TopLeft, Layout::Horizontal, probe);
-    const int32_t height = std::abs(static_cast<int32_t>(top.yMax - top.yMin));
+    // For a single line, OpenFontRender computes:
+    // - TopLeft:    baseline = y + A,   bbox.yMax = baseline + D = y + A + D
+    // - BottomLeft: baseline = y + D,   bbox.yMax = baseline + D = y + 2D
+    // where A is ascender (>0) and D is descender (<0). Using the two yMax values:
+    //   D = (bboxBottom.yMax - y) / 2
+    //   A = (bboxTop.yMax - y) - D
+    //
+    // Use a positive probe y so bbox.yMax isn't clamped by initial 0 values.
+    const char* probe = "Hg";
+    const int32_t yProbe = static_cast<int32_t>(std::max(8u, fontSizePx * 4u));
+    const FT_BBox bbTop = _ofr->calculateBoundingBox(0, yProbe, fontSizePx, Align::TopLeft, Layout::Horizontal, probe);
+    const FT_BBox bbBottom = _ofr->calculateBoundingBox(0, yProbe, fontSizePx, Align::BottomLeft, Layout::Horizontal, probe);
 
-    // Typical fonts have ascender around 70–85% of line height.
-    int32_t ascent = (height > 0) ? (height * 4) / 5 : static_cast<int32_t>(fontSizePx);
-    if (ascent <= 0) ascent = static_cast<int32_t>(fontSizePx);
+    const int32_t d = (static_cast<int32_t>(bbBottom.yMax) - yProbe) / 2;
+    const int32_t a = (static_cast<int32_t>(bbTop.yMax) - yProbe) - d;
+
+    int32_t ascent = a;
+    if (ascent <= 0) {
+        // Fallback: last-resort, keep text visible.
+        ascent = static_cast<int32_t>(fontSizePx);
+    }
+
+    // Empirical nudge: TeX extension/operator fonts can report a much larger descender,
+    // which makes a strict "FreeType ascender" baseline conversion place tall operators
+    // slightly too high relative to MicroTeX's box model. Apply a tiny correction only
+    // when the descender magnitude is unusually large.
+    const int32_t descMag = std::max<int32_t>(0, -d);
+    if (descMag >= 16) {
+        // 16..23 -> 1px, 24..31 -> 2px, 32+ -> 3px
+        const int32_t tweak = std::min<int32_t>(3, descMag / 8);
+        ascent = std::max<int32_t>(1, ascent - tweak);
+    }
 
     _currentFontSizePx = fontSizePx;
     _currentAscentPx = ascent;
@@ -234,8 +256,8 @@ void Graphics2D_tft::setFont(const Font* font) {
 }
 
 void Graphics2D_tft::drawChar(wchar_t c, float x, float y) {
-    int px = static_cast<int>((x * _sx) + _tx);
-    int py = static_cast<int>((y * _sy) + _ty);
+    int px = static_cast<int>(std::lround((x * _sx) + _tx));
+    int py = static_cast<int>(std::lround((y * _sy) + _ty));
     
     ensureFontLoaded();
 
@@ -281,17 +303,17 @@ void Graphics2D_tft::drawText(const std::wstring& t, float x, float y) {
 void Graphics2D_tft::drawLine(float x1, float y1, float x2, float y2) {
     Serial.printf("drawLine: %.1f,%.1f -> %.1f,%.1f\n", x1, y1, x2, y2);
 
-    int px1 = static_cast<int>((x1 * _sx) + _tx);
-    int py1 = static_cast<int>((y1 * _sy) + _ty);
-    int px2 = static_cast<int>((x2 * _sx) + _tx);
-    int py2 = static_cast<int>((y2 * _sy) + _ty);
+    int px1 = static_cast<int>(std::lround((x1 * _sx) + _tx));
+    int py1 = static_cast<int>(std::lround((y1 * _sy) + _ty));
+    int px2 = static_cast<int>(std::lround((x2 * _sx) + _tx));
+    int py2 = static_cast<int>(std::lround((y2 * _sy) + _ty));
     uint16_t col = colorTo565(_color);
 
     // Respect stroke width for TeX rules (fraction bar, sqrt overbar, etc.).
     // These are overwhelmingly axis-aligned lines.
     const float lw = _stroke.lineWidth;
     if (py1 == py2) {
-        const int tPx = std::max(1, static_cast<int>(std::lround(std::abs(lw * _sy))));
+        const int tPx = std::max(1, static_cast<int>(std::ceil(std::abs(lw * _sy))));
         const int xMin = std::min(px1, px2);
         const int xMax = std::max(px1, px2);
         const int yTop = py1 - (tPx / 2);
@@ -299,7 +321,7 @@ void Graphics2D_tft::drawLine(float x1, float y1, float x2, float y2) {
         return;
     }
     if (px1 == px2) {
-        const int tPx = std::max(1, static_cast<int>(std::lround(std::abs(lw * _sx))));
+        const int tPx = std::max(1, static_cast<int>(std::ceil(std::abs(lw * _sx))));
         const int yMin = std::min(py1, py2);
         const int yMax = std::max(py1, py2);
         const int xLeft = px1 - (tPx / 2);

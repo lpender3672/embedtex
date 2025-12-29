@@ -42,7 +42,7 @@ void setup() {
 
     tft.init();
     tft.setRotation(1);
-    tft.fillScreen(TFT_WHITE);
+    tft.fillScreen(TFT_BLACK);
 
     uint16_t id1 = tft.readcommand16(0x04);  // Read display ID
     uint8_t id2 = tft.readcommand8(0x09);    // Read status
@@ -63,11 +63,11 @@ void setup() {
     
     // Convert the code to a paintable object (TeXRender)
     auto render = LaTeX::parse(
-         L"\\sqrt{\\lambda + 12 \\cdot 5}",   // LaTeX code to parse
-        TFT_WIDTH,    // logical width of the graphics context (in pixel)
+        L"\\frac{\\int \\sqrt{a^2 + b^2}}{\\sum_{n=1}^{\\infty} \\frac{1}{n^2}} = \\pi", // LaTeX code
+        TFT_WIDTH,
         32,     // font size (in point)
         16,     // space between 2 lines (in pixel)
-        BLACK   // foreground color
+        WHITE   // foreground color
     );
     
     if (render) {
@@ -77,7 +77,7 @@ void setup() {
         ofr.setSerial(Serial);
         ofr.setDrawer(tft);
         Graphics2D_tft g2d(&tft, &ofr);
-        render->draw(g2d, 100, 100);  // Draw at position (0, 0)
+        render->draw(g2d, 0, 0);  // Draw at position (0, 0)
     } else {
         Serial.println("Failed to parse LaTeX");
     }
