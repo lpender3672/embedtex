@@ -1,5 +1,7 @@
 #include "graphic/graphic_tft.h"
 #include <cmath>
+#include <cstring>
+#include <Arduino.h>
 
 namespace tex {
 
@@ -130,6 +132,7 @@ uint16_t Graphics2D_tft::colorTo565(color c) const {
 }
 
 void Graphics2D_tft::setColor(color c) {
+    Serial.printf("setColor: 0x%08X -> 565: 0x%04X\n", c, colorTo565(c));
     _color = c;
 }
 
@@ -154,6 +157,7 @@ const Font* Graphics2D_tft::getFont() const {
 }
 
 void Graphics2D_tft::setFont(const Font* font) {
+    Serial.printf("setFont called: %p\n", font);
     if (font && font->kind() == FontKind::TFT) {
         _font = static_cast<const Font_tft*>(font);
         _tft->setTextFont(_font->getTftFont());
@@ -196,15 +200,21 @@ void Graphics2D_tft::drawChar(wchar_t c, float x, float y) {
     int px = static_cast<int>((x * _sx) + _tx);
     int py = static_cast<int>((y * _sy) + _ty);
     uint16_t col = colorTo565(_color);
-
-    // Handle ASCII subset
+    
+    int textSize = max(1, (int)(_sx / 8));
+    
+    Serial.printf("drawChar: '%c' sx=%.1f textSize=%d at (%d,%d)\n", (char)c, _sx, textSize, px, py);
+    
+    _tft->setTextSize(textSize);
+    
     if (c < 256) {
-        _tft->drawChar(static_cast<char>(c), px, py, _font->getTftFont());
-        _tft->setTextColor(col);
+        _tft->drawChar(px, py, static_cast<char>(c), col, TFT_WHITE, textSize);
     }
 }
 
 void Graphics2D_tft::drawText(const std::wstring& t, float x, float y) {
+    Serial.printf("drawText: len=%d at %.1f,%.1f\n", t.length(), x, y);
+
     int px = static_cast<int>((x * _sx) + _tx);
     int py = static_cast<int>((y * _sy) + _ty);
     uint16_t col = colorTo565(_color);
@@ -223,6 +233,8 @@ void Graphics2D_tft::drawText(const std::wstring& t, float x, float y) {
 }
 
 void Graphics2D_tft::drawLine(float x1, float y1, float x2, float y2) {
+    Serial.printf("drawLine: %.1f,%.1f -> %.1f,%.1f\n", x1, y1, x2, y2);
+
     int px1 = static_cast<int>((x1 * _sx) + _tx);
     int py1 = static_cast<int>((y1 * _sy) + _ty);
     int px2 = static_cast<int>((x2 * _sx) + _tx);
@@ -243,6 +255,8 @@ void Graphics2D_tft::drawRect(float x, float y, float w, float h) {
 }
 
 void Graphics2D_tft::fillRect(float x, float y, float w, float h) {
+    Serial.printf("fillRect: %.1f,%.1f %.1fx%.1f\n", x, y, w, h);
+
     int px = static_cast<int>((x * _sx) + _tx);
     int py = static_cast<int>((y * _sy) + _ty);
     int pw = static_cast<int>(w * _sx);
