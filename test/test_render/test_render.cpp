@@ -144,8 +144,32 @@ static void test_matrix_renders_end_to_end() {
   TEST_ASSERT_EQUAL_INT(0, rules);
 }
 
+static void test_showcase_matrix_renders() {
+  // The src/main.cpp demo: bold label + relation + a 2x2 bmatrix with a
+  // fraction, scripts, a radical, Greek, and big operators.
+  Renderer r(g_scratch, sizeof(g_scratch));
+  RecordingGraphics<512> rec;
+  RenderStats st{};
+  const c32 tex[] =
+      U"\\mathbf{A}=\\begin{bmatrix}"
+      U"\\frac{x^2+1}{2} & \\sqrt{\\omega} \\\\"
+      U"\\alpha^2_i & \\sum\\leq\\infty"
+      U"\\end{bmatrix}";
+  ParseError e = r.render(tex, slen(tex), 22.0f, 12, 170, rec, &st);
+  TEST_ASSERT_EQUAL_INT((int)ParseError::Ok, (int)e);
+  int glyphs = 0, rules = 0;
+  for (int i = 0; i < rec.count; ++i) {
+    if (rec.ops[i].kind == DrawOp::Glyph) ++glyphs;
+    else ++rules;
+  }
+  TEST_ASSERT_GREATER_THAN_INT(14, glyphs);  // most glyphs resolve from atlas
+  TEST_ASSERT_EQUAL_INT(1, rules);           // the one fraction bar
+  TEST_ASSERT_LESS_THAN_UINT((u32)sizeof(g_scratch), st.highWater);
+}
+
 int main(int, char**) {
   UNITY_BEGIN();
+  RUN_TEST(test_showcase_matrix_renders);
   RUN_TEST(test_default_caps_fit_device_scratch);
   RUN_TEST(test_end_to_end_ok);
   RUN_TEST(test_golden_formula);

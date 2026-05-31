@@ -20,19 +20,22 @@ Handle BoxStore::make(BoxKind kind) {
   const Handle h = _count++;
   Box& b = _boxes[h];
   b.kind = kind;
+  b.face = Face::Roman;
   b.width = b.height = b.depth = b.shift = 0.0f;
-  b.scale = 1.0f;
+  b.emPx = 0.0f;
   return h;
 }
 
-Handle BoxStore::makeChar(c32 ch, float w, float h, float d, float scale) {
+Handle BoxStore::makeChar(c32 ch, Face face, float emPx, float w, float h,
+                          float d) {
   const Handle bh = make(BoxKind::Char);
   if (!valid(bh)) return NO_NODE;
   Box& b = _boxes[bh];
+  b.face = face;
+  b.emPx = emPx;
   b.width = w;
   b.height = h;
   b.depth = d;
-  b.scale = scale;
   b.ch = ch;
   return bh;
 }

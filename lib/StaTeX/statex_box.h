@@ -23,11 +23,12 @@ enum class BoxKind : u8 {
  */
 struct Box {
   BoxKind kind;
+  Face face;     // Char: the glyph's face (for SDF lookup at draw time)
   float width;
   float height;  // extent above baseline
   float depth;   // extent below baseline
   float shift;   // vertical offset from parent baseline (+up)
-  float scale;   // glyph scale (Char)
+  float emPx;    // Char: the em pixel size to render this glyph at
   union {
     c32 ch;         // Char
     Span children;  // HList / VList (indices into box child buffer)
@@ -40,7 +41,7 @@ class BoxStore {
   BoxStore(Arena& arena, u16 maxBoxes, u16 maxChildren);
   bool ok() const { return _ok; }
 
-  Handle makeChar(c32 ch, float w, float h, float d, float scale);
+  Handle makeChar(c32 ch, Face face, float emPx, float w, float h, float d);
   Handle makeRule(float w, float h, float d);
   /** Build a list box with explicit metrics; copies child handles. */
   Handle makeList(BoxKind kind, const Handle* items, u16 count, float w,

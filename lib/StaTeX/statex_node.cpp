@@ -15,12 +15,13 @@ NodeStore::NodeStore(Arena& arena, u16 maxNodes, u16 maxChildren)
   _ok = (_nodes != nullptr) && (_children != nullptr);
 }
 
-Handle NodeStore::makeChar(c32 ch, AtomType type) {
+Handle NodeStore::makeChar(c32 ch, AtomType type, Face face) {
   if (!_ok || _count >= _cap) return NO_NODE;
   const Handle h = _count++;
   Node& n = _nodes[h];
   n.kind = Kind::Char;
   n.atomType = type;
+  n.face = face;
   n.ch = ch;
   return h;
 }

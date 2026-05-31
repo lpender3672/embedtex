@@ -2,37 +2,36 @@
 #define STATEX_TFT_H
 
 // Concrete TFT-backed Graphics2D (Phase 8). Compiled only on the Arduino
-// target. Serves glyphs from the flash atlas (STX-RES-03) — no SD / font-file
-// access on the render path. Pixels can't be unit-tested on host; the op-list
-// behavior it relies on is covered by the host draw tests.
+// target. Blends StaTeX-supplied glyph coverage (STX-FNT-02/03) and fills
+// rules — no SDF sampling here, no heap. Pixels can't be unit-tested on host;
+// the coverage it receives is covered by the host draw tests.
 #if defined(ARDUINO)
 
 #include <TFT_eSPI.h>
 
-#include "statex_atlas.h"
 #include "statex_graphics.h"
 
 namespace statex {
 
 class TftGraphics : public Graphics2D {
  public:
-  TftGraphics(TFT_eSPI& tft, uint16_t fg, float emPx)
-      : _tft(tft), _fg(fg), _emPx(emPx) {}
+  // fg is a 16-bit 565 colour; coverage is alpha-blended over a black ground.
+  TftGraphics(TFT_eSPI& tft, uint16_t fg) : _tft(tft), _fg(fg) {}
 
-  void drawGlyph(c32 ch, float x, float baseline, float scale) override {
-    const GlyphInfo* g = findGlyph(ch);
-    if (g == nullptr) return;
-    // Map atlas rows to device pixels at the requested size.
-    const float pxPerRow = (scale * _emPx) / static_cast<float>(kAtlasEmPx);
-    int cell = static_cast<int>(pxPerRow + 0.5f);
-    if (cell < 1) cell = 1;
-    const float top = baseline - g->height * pxPerRow;
-    for (int gy = 0; gy < g->height; ++gy) {
-      for (int gx = 0; gx < g->width; ++gx) {
-        if (!glyphPixel(*g, gx, gy)) continue;
-        const int px = static_cast<int>(x + gx * pxPerRow);
-        const int py = static_cast<int>(top + gy * pxPerRow);
-        _tft.fillRect(px, py, cell, cell, _fg);
+  void blendCoverage(int x, int y, int w, int h, const u8* cov) override {
+    const uint8_t fr = (_fg >> 11) & 0x1F;
+    const uint8_t fg6 = (_fg >> 5) & 0x3F;
+    const uint8_t fb = _fg & 0x1F;
+    for (int j = 0; j < h; ++j) {
+      for (int i = 0; i < w; ++i) {
+        const uint8_t a = cov[j * w + i];
+        if (a == 0) continue;
+        // Alpha-blend toward fg over black: c = fg * a/255.
+        const uint16_t r = (fr * a) / 255;
+        const uint16_t g = (fg6 * a) / 255;
+        const uint16_t b = (fb * a) / 255;
+        const uint16_t c = (r << 11) | (g << 5) | b;
+        _tft.drawPixel(x + i, y + j, c);
       }
     }
   }
@@ -47,7 +46,6 @@ class TftGraphics : public Graphics2D {
  private:
   TFT_eSPI& _tft;
   uint16_t _fg;
-  float _emPx;
 };
 
 }  // namespace statex

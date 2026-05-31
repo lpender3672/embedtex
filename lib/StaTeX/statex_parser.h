@@ -65,6 +65,7 @@ class Parser {
     u16 curCols;      // cells accumulated in the current row
     u16 rows;         // completed rows
     u8 env;           // MatrixEnv
+    Face savedFace;   // face to restore when a kStyle frame closes
   };
 
   NodeStore& _store;
@@ -77,6 +78,7 @@ class Parser {
   u16 _opTop;
   u16 _maxRows;
   u16 _maxCols;
+  Face _curFace;
   ParseError _err;
   int _errPos;
 
@@ -95,6 +97,7 @@ class Parser {
   void onRowSep(int pos);            // '\\'
   int onBegin(const c32* src, int len, int i);
   int onEnd(const c32* src, int len, int i);
+  void onStyle(Face face);  // \mathrm \mathit \mathbf \mathbb
 };
 
 }  // namespace statex

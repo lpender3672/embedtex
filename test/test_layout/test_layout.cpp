@@ -1,9 +1,10 @@
-// Phase 5 — layout (atom tree -> box tree), metrics + structure.
-// STX-EXE-01 (iterative), STX-DAT-03/04, STX-MEM-03.
+// Phase 5 — layout (atom tree -> box tree), now metric-driven from the glyph
+// store (STX-RES-01). STX-EXE-01 (iterative), STX-DAT-03, STX-MEM-03.
 #include <unity.h>
 #include <statex_parser.h>
 #include <statex_layout.h>
 #include <statex_serialize.h>
+#include <statex_glyphstore.h>
 
 using namespace statex;
 
@@ -16,7 +17,6 @@ void tearDown() {}
 template <int N>
 static int slen(const c32 (&)[N]) { return N - 1; }
 
-// Parse + layout into the given BoxStore; returns root box handle (NO_NODE on fail).
 static Handle layoutOf(Arena& a, BoxStore& boxes, const c32* src, int len) {
   NodeStore nodes(a, 1024, 1024);
   Parser p(a, nodes);
@@ -27,61 +27,76 @@ static Handle layoutOf(Arena& a, BoxStore& boxes, const c32* src, int len) {
   return lr.ok ? lr.rootBox : NO_NODE;
 }
 
-static void structEq(Arena& a, BoxStore& boxes, Handle root, const char* expect) {
+static void structEq(BoxStore& boxes, Handle root, const char* expect) {
   char out[512];
   int n = serializeBox(boxes, root, out, sizeof(out));
   TEST_ASSERT_TRUE(n >= 0);
   TEST_ASSERT_EQUAL_STRING(expect, out);
 }
 
-static void test_char_metrics() {
+static void test_char_metrics_from_glyph_store() {
   Arena a(g_buf, sizeof(g_buf));
   BoxStore boxes(a, 256, 256);
   Handle r = layoutOf(a, boxes, U"x", 1);
   TEST_ASSERT_TRUE(valid(r));
   const Box& b = boxes.get(r);
   TEST_ASSERT_EQUAL_INT((int)BoxKind::Char, (int)b.kind);
-  TEST_ASSERT_FLOAT_WITHIN(0.01f, 10.0f, b.width);
-  TEST_ASSERT_FLOAT_WITHIN(0.01f, 14.0f, b.height);
-  TEST_ASSERT_FLOAT_WITHIN(0.01f, 0.0f, b.depth);
+  TEST_ASSERT_EQUAL_INT((int)Face::Roman, (int)b.face);
+  TEST_ASSERT_FLOAT_WITHIN(0.01f, SIZE, b.emPx);
+  // Width/height come from the glyph record, not a uniform constant.
+  const GlyphRecord* g = findGlyphRecord(Face::Roman, 'x');
+  TEST_ASSERT_NOT_NULL(g);
+  TEST_ASSERT_FLOAT_WITHIN(0.1f, g->advance / 256.0f * SIZE, b.width);
+  TEST_ASSERT_FLOAT_WITHIN(0.1f, g->height / 256.0f * SIZE, b.height);
 }
 
-static void test_row_metrics() {
+static void test_row_width_is_sum() {
   Arena a(g_buf, sizeof(g_buf));
   BoxStore boxes(a, 256, 256);
   Handle r = layoutOf(a, boxes, U"xy", 2);
   TEST_ASSERT_TRUE(valid(r));
-  structEq(a, boxes, r, "(H x y)");
+  structEq(boxes, r, "(H x y)");
   const Box& b = boxes.get(r);
-  TEST_ASSERT_FLOAT_WITHIN(0.01f, 20.0f, b.width);
-  TEST_ASSERT_FLOAT_WITHIN(0.01f, 14.0f, b.height);
+  const GlyphRecord* gx = findGlyphRecord(Face::Roman, 'x');
+  const GlyphRecord* gy = findGlyphRecord(Face::Roman, 'y');
+  const float expect = (gx->advance + gy->advance) / 256.0f * SIZE;
+  TEST_ASSERT_FLOAT_WITHIN(0.2f, expect, b.width);
 }
 
-static void test_frac_metrics() {
+static void test_frac_structure_and_depth() {
   Arena a(g_buf, sizeof(g_buf));
   BoxStore boxes(a, 256, 256);
   Handle r = layoutOf(a, boxes, U"\\frac{a}{b}", slen(U"\\frac{a}{b}"));
   TEST_ASSERT_TRUE(valid(r));
-  structEq(a, boxes, r, "(V a R b)");
+  structEq(boxes, r, "(V a R b)");
   const Box& b = boxes.get(r);
   TEST_ASSERT_EQUAL_INT((int)BoxKind::VList, (int)b.kind);
-  TEST_ASSERT_FLOAT_WITHIN(0.01f, 10.0f, b.width);
-  // numShift(8.4) + num.height(14) = 22.4 ; depth = 12.4
-  TEST_ASSERT_FLOAT_WITHIN(0.05f, 22.4f, b.height);
-  TEST_ASSERT_FLOAT_WITHIN(0.05f, 12.4f, b.depth);
+  TEST_ASSERT_GREATER_THAN_FLOAT(0.0f, b.height);  // numerator above
+  TEST_ASSERT_GREATER_THAN_FLOAT(0.0f, b.depth);   // denominator below
 }
 
-static void test_superscript_metrics() {
+static void test_superscript_structure_and_scale() {
   Arena a(g_buf, sizeof(g_buf));
   BoxStore boxes(a, 256, 256);
   Handle r = layoutOf(a, boxes, U"x^2", 3);
   TEST_ASSERT_TRUE(valid(r));
-  structEq(a, boxes, r, "(H x 2)");
-  const Box& b = boxes.get(r);
-  // width = base(10) + sup(10*0.7=7) = 17
-  TEST_ASSERT_FLOAT_WITHIN(0.05f, 17.0f, b.width);
-  // height = max(14, supShift(9) + supHeight(14*0.7=9.8)) = 18.8
-  TEST_ASSERT_FLOAT_WITHIN(0.05f, 18.8f, b.height);
+  structEq(boxes, r, "(H x 2)");
+  // The superscript box renders at a smaller em than the base.
+  const Box& root = boxes.get(r);
+  const Box& base = boxes.get(boxes.child(r, 0));
+  const Box& sup = boxes.get(boxes.child(r, 1));
+  TEST_ASSERT_FLOAT_WITHIN(0.01f, SIZE, base.emPx);
+  TEST_ASSERT_TRUE(sup.emPx < base.emPx);   // scaled down
+  TEST_ASSERT_TRUE(sup.shift > 0.0f);       // raised
+  TEST_ASSERT_TRUE(root.width > base.width);
+}
+
+static void test_combined_scripts_use_vlist() {
+  Arena a(g_buf, sizeof(g_buf));
+  BoxStore boxes(a, 256, 256);
+  Handle r = layoutOf(a, boxes, U"x^2_i", 5);
+  TEST_ASSERT_TRUE(valid(r));
+  structEq(boxes, r, "(H x (V 2 i))");
 }
 
 static void test_sqrt_structure() {
@@ -89,9 +104,7 @@ static void test_sqrt_structure() {
   BoxStore boxes(a, 256, 256);
   Handle r = layoutOf(a, boxes, U"\\sqrt{x}", slen(U"\\sqrt{x}"));
   TEST_ASSERT_TRUE(valid(r));
-  structEq(a, boxes, r, "(H <U+221A> x)");
-  const Box& b = boxes.get(r);
-  TEST_ASSERT_FLOAT_WITHIN(0.05f, 19.0f, b.width);  // 9 + 10
+  structEq(boxes, r, "(H <U+221A> x)");
 }
 
 static void test_nested_frac_structure() {
@@ -99,11 +112,10 @@ static void test_nested_frac_structure() {
   BoxStore boxes(a, 256, 256);
   Handle r = layoutOf(a, boxes, U"\\frac{x^2}{y}", slen(U"\\frac{x^2}{y}"));
   TEST_ASSERT_TRUE(valid(r));
-  structEq(a, boxes, r, "(V (H x 2) R y)");
+  structEq(boxes, r, "(V (H x 2) R y)");
 }
 
 static void test_layout_exhaustion_refuses() {
-  // Tiny box store -> layout must fail cleanly, not crash (STX-MEM-03).
   Arena a(g_buf, sizeof(g_buf));
   BoxStore boxes(a, 2, 4);
   Handle r = layoutOf(a, boxes, U"\\frac{abc}{def}", slen(U"\\frac{abc}{def}"));
@@ -111,7 +123,6 @@ static void test_layout_exhaustion_refuses() {
 }
 
 static void test_iterative_deep_nesting_ok() {
-  // Deep nesting must not overflow the C++ stack (work-stack is in the arena).
   Arena a(g_buf, sizeof(g_buf));
   BoxStore boxes(a, 512, 512);
   const c32 src[] =
@@ -122,10 +133,11 @@ static void test_iterative_deep_nesting_ok() {
 
 int main(int, char**) {
   UNITY_BEGIN();
-  RUN_TEST(test_char_metrics);
-  RUN_TEST(test_row_metrics);
-  RUN_TEST(test_frac_metrics);
-  RUN_TEST(test_superscript_metrics);
+  RUN_TEST(test_char_metrics_from_glyph_store);
+  RUN_TEST(test_row_width_is_sum);
+  RUN_TEST(test_frac_structure_and_depth);
+  RUN_TEST(test_superscript_structure_and_scale);
+  RUN_TEST(test_combined_scripts_use_vlist);
   RUN_TEST(test_sqrt_structure);
   RUN_TEST(test_nested_frac_structure);
   RUN_TEST(test_layout_exhaustion_refuses);

@@ -5,7 +5,9 @@
 namespace statex {
 namespace {
 
-enum FrameKind : u8 { kRoot = 0, kBrace, kBracket, kFrac, kSqrt, kMatrix };
+enum FrameKind : u8 {
+  kRoot = 0, kBrace, kBracket, kFrac, kSqrt, kMatrix, kStyle
+};
 enum ScriptState : u8 { kNone = 0, kSup, kSub };
 
 // Compare src[start..start+len) to a NUL-terminated ASCII literal.
@@ -64,6 +66,7 @@ Parser::Parser(Arena& arena, NodeStore& store, u16 maxDepth, u16 maxOperands,
       _opTop(0),
       _maxRows(maxMatrixRows),
       _maxCols(maxMatrixCols),
+      _curFace(Face::Roman),
       _err(ParseError::Ok),
       _errPos(-1) {
   _frames = arena.allocArray<Frame>(maxDepth);
@@ -149,7 +152,12 @@ void Parser::feedOperand(Handle h) {
     }
     // Op frame: consume h as an argument.
     Handle result;
-    if (f.kind == kFrac) {
+    if (f.kind == kStyle) {
+      // Face already applied to the argument's chars during parsing; this frame
+      // just restores the previous face and passes the argument through.
+      _curFace = f.savedFace;
+      result = h;
+    } else if (f.kind == kFrac) {
       if (f.need == 2) {
         f.argA = h;
         f.need = 1;
@@ -266,6 +274,10 @@ int Parser::onCommand(const c32* src, int len, int i) {
   }
   if (nameIs("begin")) return onBegin(src, len, i);
   if (nameIs("end")) return onEnd(src, len, i);
+  if (nameIs("mathrm")) { onStyle(Face::Roman); return i; }
+  if (nameIs("mathit")) { onStyle(Face::Italic); return i; }
+  if (nameIs("mathbf")) { onStyle(Face::Bold); return i; }
+  if (nameIs("mathbb")) { onStyle(Face::Blackboard); return i; }
 
   // Named symbol: build an ASCII key and look it up in the flash table.
   char key[32];
@@ -279,13 +291,19 @@ int Parser::onCommand(const c32* src, int len, int i) {
     fail(ParseError::UnknownCommand, start);
     return i;
   }
-  const Handle h = _store.makeChar(e->glyph, e->type);
+  const Handle h = _store.makeChar(e->glyph, e->type, Face::Symbol);
   if (!valid(h)) {
     fail(ParseError::OutOfMemory, start);
     return i;
   }
   feedOperand(h);
   return i;
+}
+
+void Parser::onStyle(Face face) {
+  if (!pushFrame(kStyle, /*need=*/1, /*rule=*/false, NO_NODE)) return;
+  _frames[_depth - 1].savedFace = _curFace;
+  _curFace = face;
 }
 
 bool Parser::endCell(Frame& f, int pos) {
@@ -445,6 +463,7 @@ ParseResult Parser::parse(const c32* src, int len) {
   _errPos = -1;
   _depth = 0;
   _opTop = 0;
+  _curFace = Face::Roman;
   if (!_ok) return {NO_NODE, ParseError::OutOfMemory, 0};
 
   pushFrame(kRoot, 0, false, NO_NODE);
@@ -500,7 +519,7 @@ ParseResult Parser::parse(const c32* src, int len) {
     }
     // Ordinary character.
     ++i;
-    const Handle h = _store.makeChar(c, classify(c));
+    const Handle h = _store.makeChar(c, classify(c), _curFace);
     if (!valid(h)) {
       fail(ParseError::OutOfMemory, i);
       break;

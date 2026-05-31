@@ -17,6 +17,16 @@ using i16 = std::int16_t;
 using i32 = std::int32_t;
 using c32 = char32_t;
 
+/** Type face (STX-FNT-05). Lives here so nodes, the glyph store, layout, and
+ *  draw can all share it without coupling. */
+enum class Face : u8 {
+  Roman = 0,
+  Italic = 1,
+  Bold = 2,
+  Symbol = 3,
+  Blackboard = 4,
+};
+
 /**
  * A handle is a u16 index into a node store, used instead of a pointer
  * (STX-DAT-01). The all-ones value is reserved to mean "no node".

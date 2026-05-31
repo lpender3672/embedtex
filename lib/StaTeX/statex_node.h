@@ -49,6 +49,7 @@ enum class AtomType : u8 {
 struct Node {
   Kind kind;
   AtomType atomType;
+  Face face;  // meaningful for Kind::Char (STX-FNT-05); Roman otherwise
 
   struct FracData {
     Handle num;
@@ -96,7 +97,8 @@ class NodeStore {
   /** True if the backing arrays were allocated. If false, all factories refuse. */
   bool ok() const { return _ok; }
 
-  Handle makeChar(c32 ch, AtomType type = AtomType::Ordinary);
+  Handle makeChar(c32 ch, AtomType type = AtomType::Ordinary,
+                  Face face = Face::Roman);
   Handle makeFrac(Handle num, Handle den, bool rule = true);
   Handle makeScript(Handle base, Handle sup, Handle sub);
   Handle makeSqrt(Handle base, Handle index = NO_NODE);

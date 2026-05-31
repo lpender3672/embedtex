@@ -167,7 +167,11 @@ shall branch on the tag (or via a visitor), then `static_cast`.
 
 **STX-RES-01 — All static data in flash.**
 Symbol tables, font metrics, and predefined-formula tables shall be `constexpr`/PROGMEM data
-linked into flash, looked up by binary search; none shall be parsed or built at runtime.
+linked into flash, looked up by binary search; none shall be parsed or built at runtime. This
+includes **per-glyph layout metrics** (advance, bearing, em-height, em-depth, italic
+correction) and global **font parameters** (axis height, x-height, default rule thickness,
+superscript/subscript shifts), which layout (STX-DAT-03) consumes in place of hard-coded
+constants. See STX-FNT-* (§12) for the glyph record.
 *Replaces:* init-time `std::map` dictionaries — `Formula::_symbol*Mappings` /
 `_predefinedTeXFormulas` (`lib/MicroTeX/core/formula.h:59-66`), `DefaultTeXFont` maps
 (`lib/MicroTeX/fonts/fonts.h:34-37`), `MacroInfo::_commands` (`lib/MicroTeX/core/macro.h:95`),
@@ -179,11 +183,14 @@ The XML/font-metric parsers shall not exist on the target.
 *Replaces:* `res/parser/font_parser.*` and `res/parser/formula_parser.*`, and the file reads in
 `LaTeX::init` (`lib/MicroTeX/latex.cpp:77,85`, `fopen`).
 
-**STX-RES-03 — Glyph atlas in flash; no render-path file I/O.**
-Glyphs shall be served from a pre-rasterized atlas in flash. No SD/filesystem access shall
-occur during a render request.
+**STX-RES-03 — Glyphs in flash; no render-path file I/O.**
+Glyphs shall be served from flash as single-resolution **signed-distance fields** (SDF),
+rendered to arbitrary size by bounded sampling + thresholding (STX-FNT-*, §12). No
+SD/filesystem access shall occur during a render request.
 *Replaces:* runtime TTF loading `OpenFontRender::loadFont` (`lib/MicroTeX/graphic/graphic_tft.cpp:130`)
 and `SD.begin`/file access on the active path (`src/main.cpp:24`).
+*Note:* supersedes the initial fixed-bitmap seed atlas (`lib/StaTeX/statex_atlas.*`); the SDF
+store and its sampler are specified in §12.
 
 ---
 
@@ -228,8 +235,12 @@ leaked at the call site (`src/main.cpp:65`, no `delete`).
 Each render request shall be self-contained: begin → build → layout → draw → reset, with no
 state carried between requests except immutable flash data.
 
-**STX-API-03 — Graphics backend abstraction retained.**
-The drawing surface shall remain an abstract interface implemented per target.
+**STX-API-03 — Graphics backend abstraction.**
+The drawing surface shall remain an abstract interface implemented per target. It shall expose
+a **coverage/alpha primitive** (blend a glyph coverage span/rect with a colour) in addition to
+a filled-rect primitive, so antialiased glyphs (STX-FNT-03) reach the device. StaTeX owns the
+SDF→coverage sampling (STX-FNT-02) so the backend stays heap-free and trivially portable;
+the backend only blends what it is handed.
 *Derives from:* `Graphics2D` / `Graphics2D_tft` (`lib/MicroTeX/graphic/graphic.h`,
 `lib/MicroTeX/graphic/graphic_tft.*`), kept but freed of heap use.
 
@@ -265,3 +276,48 @@ single-exit error propagation, no `std::function`-style type-erased heap closure
 | Runtime parse/IO → none | XML/font parsers, `fopen`, SD, `loadFont` | `latex.cpp:77,85`, `graphic/graphic_tft.cpp:130` |
 | Macros → dropped | `NewCommandMacro`, `insert()` expansion | `core/macro.h:21`, `core/parser.h:71` |
 | Owning return → caller storage | `LaTeX::parse -> TeXRender*` (leaked) | `latex.h:52`, `src/main.cpp:65` |
+| Fonts → SDF + metric tables in flash | runtime TTF rasterization (OpenFontRender) | `graphic/graphic_tft.cpp:130`; see §12 |
+
+---
+
+## 12. Fonts and glyphs
+
+Glyph *images* and glyph *metrics* are distinct datasets, both `constexpr` in internal flash
+(the Teensy 4.1's ~8 MB is ample; no external flash chip is required). Images use signed
+distance fields so a single stored resolution scales smoothly to any size while keeping the
+runtime fully static and bounded — no outline rasterizer, no heap (the reason MicroTeX's
+runtime TTF path was dropped). The full math face set is in scope (roman, math-italic, bold,
+symbol, blackboard).
+
+**STX-FNT-01 — Flash glyph record.**
+Each glyph shall be a `constexpr` record carrying: a single-resolution **SDF bitmap** (N×N,
+8-bit distance), placement (bearing, advance), and the layout metrics of STX-RES-01
+(em-height, em-depth, italic correction). Records are keyed by (face, codepoint) and looked up
+by binary search. No glyph data is parsed or built at runtime (with STX-RES-02).
+
+**STX-FNT-02 — Bounded SDF rasterization.**
+Rendering a glyph shall sample the SDF (bilinear) and threshold to coverage, writing into a
+fixed scratch coverage buffer of at most G×G pixels. A glyph whose target size exceeds G×G
+shall refuse (with STX-MEM-03), never grow memory. Sampling shall use no heap and complete in
+bounded, input-independent steps per output pixel (with STX-EXE-03).
+
+**STX-FNT-03 — Antialiasing.**
+Edge coverage shall be derived from the sampled distance as a ~1-pixel linear ramp, yielding
+smooth edges at any scale (replacing the blocky nearest-neighbour scaling of the seed atlas).
+
+**STX-FNT-04 — Offline atlas generation.**
+The SDF bitmaps, metrics, and font parameters shall be produced by a **host-side tool** from
+source fonts and emitted as checked-in `constexpr` tables. The device shall never rasterize
+from outlines nor read font files (reinforces STX-RES-02). The generator is off-device tooling,
+analogous to the differential oracle of the dev process.
+
+**STX-FNT-05 — Faces and style selection.**
+The glyph store shall carry a **face dimension** (roman, math-italic, bold, symbol,
+blackboard). Math style commands (`\mathrm`, `\mathit`, `\mathbf`, `\mathsf`, `\mathbb`, …)
+shall select the face for their argument; an unavailable (face, glyph) pair refuses
+(STX-LNG-02 / STX-ERR-03). Style selection is part of the closed command set, not runtime
+registration (STX-LNG-04).
+
+*Testability:* SDF sampling, AA edge ramp, scale invariance, and metric-driven layout are all
+host-testable — the recording backend (dev-process §3) captures coverage blits, asserted
+against goldens; the MicroTeX differential oracle (§4) still applies to the supported subset.

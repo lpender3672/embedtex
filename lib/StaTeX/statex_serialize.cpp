@@ -61,6 +61,13 @@ void dump(const NodeStore& s, Handle h, Writer& w, int depth) {
         }
         w.put('>');
       }
+      // Face marker for non-Roman so style selection is assertable.
+      switch (n.face) {
+        case Face::Italic: w.puts("!i"); break;
+        case Face::Bold: w.puts("!b"); break;
+        case Face::Blackboard: w.puts("!bb"); break;
+        default: break;  // Roman and Symbol print unmarked
+      }
       break;
     case Kind::Row:
       w.put('[');

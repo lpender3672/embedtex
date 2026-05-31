@@ -143,6 +143,27 @@ static void test_node_exhaustion_refused() {
   TEST_ASSERT_FALSE(valid(r.root));
 }
 
+// ---- face / style selection (STX-FNT-05) ----
+
+static void test_mathbf_group() { OK(U"\\mathbf{AB}", "[A!b B!b]"); }
+
+static void test_mathit_single_token() { OK(U"\\mathit x", "x!i"); }
+
+static void test_mathbb() { OK(U"\\mathbb R", "R!bb"); }
+
+static void test_style_then_script() {
+  OK(U"\\mathbf{x}^2", "(scr x!b ^2 _.)");
+}
+
+static void test_nested_style_restores() {
+  // inner \mathit overrides, then face restores to bold for the rest
+  OK(U"\\mathbf{a\\mathit{b}c}", "[a!b b!i c!b]");
+}
+
+static void test_style_missing_arg() {
+  REFUSE(U"\\mathbf", ParseError::MissingArg);
+}
+
 static void test_reuse_after_refusal() {
   // STX-MEM-03: after a refusal + reset, the next parse succeeds cleanly.
   Arena a(g_buf, sizeof(g_buf));
@@ -195,6 +216,12 @@ int main(int, char**) {
   RUN_TEST(test_double_superscript);
   RUN_TEST(test_script_missing_arg);
   RUN_TEST(test_frac_missing_second_arg);
+  RUN_TEST(test_mathbf_group);
+  RUN_TEST(test_mathit_single_token);
+  RUN_TEST(test_mathbb);
+  RUN_TEST(test_style_then_script);
+  RUN_TEST(test_nested_style_restores);
+  RUN_TEST(test_style_missing_arg);
   RUN_TEST(test_too_deep_refused);
   RUN_TEST(test_node_exhaustion_refused);
   RUN_TEST(test_reuse_after_refusal);

@@ -32,10 +32,11 @@ class Layout {
  private:
   struct WorkItem {
     Handle atom;
-    u8 phase;  // 0 = pre (push children), 1 = post (combine)
+    u8 phase;    // 0 = pre (push children), 1 = post (combine)
+    float size;  // em pixel size for this node (scripts shrink it)
   };
 
-  Handle combine(Handle atom, const Node& n, const Handle* boxOf);
+  Handle combine(Handle atom, const Node& n, const Handle* boxOf, float size);
 
   Arena& _arena;
   const NodeStore& _nodes;

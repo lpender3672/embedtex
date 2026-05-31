@@ -18,10 +18,10 @@ TFT_eSPI tft;
 static uint8_t g_scratch[96 * 1024];
 static Renderer g_renderer(g_scratch, sizeof(g_scratch));
 
-static const float kSizePx = 24.0f;
+static const float kSizePx = 22.0f;
 
 static void renderFormula(const c32* tex, int len, float x, float baseline) {
-  TftGraphics g(tft, TFT_WHITE, kSizePx);
+  TftGraphics g(tft, TFT_WHITE);
   RenderStats st{};
   const ParseError e =
       g_renderer.render(tex, len, kSizePx, x, baseline, g, &st);
@@ -40,9 +40,14 @@ void setup() {
   tft.setRotation(1);
   tft.fillScreen(TFT_BLACK);
 
-  // Glyphs present in the seed atlas: + 0 1 2 x y. This fraction uses them all.
-  const c32 tex[] = U"\\frac{x^2+1}{2}";
-  renderFormula(tex, (int)(sizeof(tex) / sizeof(c32)) - 1, 20.0f, 90.0f);
+  // A showcase matrix: bold label + relation + a 2x2 bmatrix whose cells mix
+  // fractions, super/subscripts, a radical, Greek, and big operators.
+  const c32 tex[] =
+      U"\\mathbf{A}=\\begin{bmatrix}"
+      U"\\frac{x^2+1}{2} & \\sqrt{\\omega} \\\\"
+      U"\\alpha^2_i & \\sum\\leq\\infty"
+      U"\\end{bmatrix}";
+  renderFormula(tex, (int)(sizeof(tex) / sizeof(c32)) - 1, 12.0f, 170.0f);
 }
 
 void loop() {}
