@@ -1,86 +1,48 @@
+// StaTeX on Teensy 4.1: parse + lay out + draw a math formula to a TFT, using
+// a single static scratch arena and the flash glyph atlas. No heap, no
+// exceptions, no RTTI, no runtime font/SD access on the render path.
 #include <Arduino.h>
 #undef PI
 
-extern "C" {
-    int _open(const char *name, int flags, int mode) { return -1; }
-    int _stat(const char *name, void *st) { return -1; }
-}
-
 #include <TFT_eSPI.h>
-#include <SD.h>
-#include "latex.h"
-#include "graphic/graphic_tft.h"
 
-using namespace tex;
+#include "statex_render.h"
+#include "statex_tft.h"
+
+using namespace statex;
 
 TFT_eSPI tft;
 
+// The one and only working memory for rendering (STX-MEM-02). Sized once here;
+// if a formula doesn't fit, render() refuses gracefully (STX-MEM-03).
+static uint8_t g_scratch[96 * 1024];
+static Renderer g_renderer(g_scratch, sizeof(g_scratch));
+
+static const float kSizePx = 24.0f;
+
+static void renderFormula(const c32* tex, int len, float x, float baseline) {
+  TftGraphics g(tft, TFT_WHITE, kSizePx);
+  RenderStats st{};
+  const ParseError e =
+      g_renderer.render(tex, len, kSizePx, x, baseline, g, &st);
+  if (e == ParseError::Ok) {
+    Serial.printf("rendered: %dx%d (depth %d), scratch high-water %lu bytes\n",
+                  (int)st.width, (int)st.height, (int)st.depth,
+                  (unsigned long)st.highWater);
+  } else {
+    Serial.printf("render refused, code=%d\n", (int)e);
+  }
+}
+
 void setup() {
-    Serial.begin(115200);
-    while (!Serial) delay(10);
+  Serial.begin(115200);
+  tft.init();
+  tft.setRotation(1);
+  tft.fillScreen(TFT_BLACK);
 
-    // Make sure the filesystem that holds /res/fonts/... is mounted.
-    // For Teensy 4.1 built-in SD card slot:
-    if (!SD.begin(BUILTIN_SDCARD)) {
-        Serial.println("SD.begin(BUILTIN_SDCARD) failed");
-    }
-
-    SPI.begin();
-    SPI.setClockDivider(SPI_CLOCK_DIV64);
-
-    pinMode(10, OUTPUT); // CS
-    pinMode(9, OUTPUT);  // DC
-    pinMode(8, OUTPUT);  // RST
-    
-    Serial.println("Initializing TFT...");
-    digitalWrite(8, HIGH);
-    delay(100);
-    digitalWrite(8, LOW);
-    delay(100);
-    digitalWrite(8, HIGH);
-    delay(200);
-
-    tft.init();
-    tft.setRotation(1);
-    tft.fillScreen(TFT_BLACK);
-
-    uint16_t id1 = tft.readcommand16(0x04);  // Read display ID
-    uint8_t id2 = tft.readcommand8(0x09);    // Read status
-    uint32_t id3 = tft.readcommand32(0xEF);  // Read ID4 (some displays)
-    
-    Serial.print("ID 0x04: 0x"); Serial.println(id1, HEX);
-    Serial.print("ID 0x09: 0x"); Serial.println(id2, HEX);
-    Serial.print("ID 0xEF: 0x"); Serial.println(id3, HEX);
-    
-    Serial.println("Initializing MicroTeX...");
-    
-    // MicroTeX needs resource files loaded first
-    // You'll need the res/ folder from MicroTeX with fonts
-    // LaTeX::init("path/to/res");  // Adjust path for your setup
-    LaTeX::init("/res");
-
-    Serial.println("Parsing LaTeX...");
-    
-    // Convert the code to a paintable object (TeXRender)
-    auto render = LaTeX::parse(
-        L"\\frac{\\int \\sqrt{a^2 + b^2}}{\\sum_{n=1}^{\\infty} \\frac{1}{n^2}} = \\pi", // LaTeX code
-        TFT_WIDTH,
-        32,     // font size (in point)
-        16,     // space between 2 lines (in pixel)
-        WHITE   // foreground color
-    );
-    
-    if (render) {
-        Serial.printf("Render size: %d x %d\n", render->getWidth(), render->getHeight());
-
-        OpenFontRender ofr;
-        ofr.setSerial(Serial);
-        ofr.setDrawer(tft);
-        Graphics2D_tft g2d(&tft, &ofr);
-        render->draw(g2d, 0, 0);  // Draw at position (0, 0)
-    } else {
-        Serial.println("Failed to parse LaTeX");
-    }
+  // Glyphs present in the seed atlas: + 0 1 2 x y. This fraction uses them all.
+  const c32 tex[] = U"\\frac{x^2+1}{2}";
+  renderFormula(tex, (int)(sizeof(tex) / sizeof(c32)) - 1, 20.0f, 90.0f);
 }
 
 void loop() {}

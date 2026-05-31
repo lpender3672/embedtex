@@ -1,0 +1,48 @@
+// Preserved original MicroTeX-based demo (pre-StaTeX). Kept for reference; not
+// compiled. The active entry point src/main.cpp now drives StaTeX.
+//
+// (Original content of src/main.cpp prior to the StaTeX integration.)
+#include <Arduino.h>
+#undef PI
+
+extern "C" {
+    int _open(const char *name, int flags, int mode) { return -1; }
+    int _stat(const char *name, void *st) { return -1; }
+}
+
+#include <TFT_eSPI.h>
+#include <SD.h>
+#include "latex.h"
+#include "graphic/graphic_tft.h"
+
+using namespace tex;
+
+TFT_eSPI tft;
+
+void setup() {
+    Serial.begin(115200);
+    if (!SD.begin(BUILTIN_SDCARD)) {
+        Serial.println("SD.begin(BUILTIN_SDCARD) failed");
+    }
+    SPI.begin();
+    SPI.setClockDivider(SPI_CLOCK_DIV64);
+    pinMode(10, OUTPUT);
+    pinMode(9, OUTPUT);
+    pinMode(8, OUTPUT);
+    tft.init();
+    tft.setRotation(1);
+    tft.fillScreen(TFT_BLACK);
+    LaTeX::init("/res");
+    auto render = LaTeX::parse(
+        LR"(\frac{d}{dt}\begin{bmatrix}x \\ \dot{x}\end{bmatrix})",
+        TFT_WIDTH, 20, 10, WHITE);
+    if (render) {
+        OpenFontRender ofr;
+        ofr.setSerial(Serial);
+        ofr.setDrawer(tft);
+        Graphics2D_tft g2d(&tft, &ofr);
+        render->draw(g2d, 0, 100);
+    }
+}
+
+void loop() {}
