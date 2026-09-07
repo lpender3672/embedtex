@@ -33,6 +33,13 @@ struct GlyphRecord {
   u8 face;
   u8 sdfW;
   u8 sdfH;
+  // Size variant: 0 is the text-size glyph, 1 and up are successively larger
+  // purpose-cut designs from cmex10. TeX enlarges a symbol by walking this
+  // chain, not by scaling, because a scaled 10pt design has the wrong stroke
+  // weight AND the wrong metrics -- and a big operator is positioned from its
+  // own height and depth, so the metrics error becomes a placement error.
+  // Occupies what was padding, so GlyphRecord is still 32 bytes.
+  u8 variant;
   c32 codepoint;
   u32 sdfOffset;
   i16 advance;   // horizontal advance
@@ -46,8 +53,63 @@ struct GlyphRecord {
   i16 boxH;      // SDF box height
 };
 
-/** Look up a glyph by face+codepoint, or nullptr if absent (STX-LNG-02). */
+/**
+ * Convert one of GlyphRecord's fixed-point fields to pixels.
+ *
+ * Every metric above is stored in 1/256 of an em, and that divisor was being
+ * written out by hand at fifteen call sites across layout, the draw walk and
+ * the test suites. It is the record's storage format, not a tunable, so it
+ * belongs with the record -- and a format that is restated in fifteen places
+ * is a format that will one day be changed in fourteen.
+ */
+inline constexpr float emUnits(i16 v, float emPx) {
+  return static_cast<float>(v) / 256.0f * emPx;
+}
+
+/**
+ * Variants at or above this are not size steps: they are the pieces of an
+ * extensible recipe (top, repeat, bottom), which TeX stacks to build a
+ * delimiter taller than any single glyph. They must be excluded from any
+ * "smallest that fits" walk -- a repeat tile is 0.6 em and would be chosen in
+ * preference to the 2.4 em bracket it is meant to extend.
+ */
+constexpr u8 kFirstPieceVariant = 8;
+constexpr u8 kPieceTop = 8;
+constexpr u8 kPieceRepeat = 9;
+constexpr u8 kPieceBottom = 10;
+
+/** Look up the text-size glyph by face+codepoint, or nullptr (STX-LNG-02). */
 const GlyphRecord* findGlyphRecord(Face face, c32 cp);
+
+/**
+ * One exact size variant, or nullptr if the chain has no such entry.
+ *
+ * The draw walk must fetch the variant LAYOUT chose, not "the biggest one".
+ * Getting that wrong is invisible to a position comparison -- the pen position
+ * is computed from the measured record and stays right -- but draws a
+ * different glyph, which is how a 3em surd ended up under a 1.2em radicand.
+ */
+const GlyphRecord* findGlyphVariant(Face face, c32 cp, u8 variant);
+
+/**
+ * The largest size variant of a glyph, or the text-size one when the atlas
+ * carries no variants for it. TeX uses the larger design for a big operator in
+ * display style; falling back to the base is what should happen for a symbol
+ * that has no display cut, and is not an error.
+ */
+const GlyphRecord* findLargestGlyphVariant(Face face, c32 cp);
+
+/**
+ * The smallest size variant whose height+depth reaches `minTotalEm` (in 1/256
+ * em), or the largest available when none does.
+ *
+ * This is TeX's rule for growing a radical or a delimiter: walk the chain of
+ * purpose-cut designs and take the first that is big enough, rather than
+ * scaling one design up. Returning the largest on overflow is deliberate --
+ * TeX would assemble an extensible recipe at that point, which StaTeX does not
+ * do yet, and the biggest real glyph is a better answer than a distorted one.
+ */
+const GlyphRecord* findGlyphVariantAtLeast(Face face, c32 cp, i16 minTotalEm);
 
 /** The shared SDF byte blob; index with GlyphRecord::sdfOffset. */
 const u8* glyphSdfData();

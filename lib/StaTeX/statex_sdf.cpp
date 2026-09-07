@@ -32,8 +32,14 @@ float sampleSdf(const u8* base, int w, int h, float u, float v) {
 bool renderGlyphCoverage(const GlyphRecord& g, const u8* sdfBase, int spread256,
                          int emPx, u8* out, int cap, GlyphCoverage* cov) {
   // Output box size in device pixels = SDF box (em) * emPx.
-  const int w = static_cast<int>((g.boxW * emPx) / 256 + 0.5f);
-  const int h = static_cast<int>((g.boxH * emPx) / 256 + 0.5f);
+  //
+  // The division is in floating point on purpose: `g.boxW * emPx / 256` in
+  // integers truncates before the rounding term can apply, which cost every
+  // glyph up to a pixel of width and height, worst at the small sizes scripts
+  // live at.
+  const float emScale = static_cast<float>(emPx) / 256.0f;
+  const int w = static_cast<int>(static_cast<float>(g.boxW) * emScale + 0.5f);
+  const int h = static_cast<int>(static_cast<float>(g.boxH) * emScale + 0.5f);
   cov->w = w;
   cov->h = h;
   if (w <= 0 || h <= 0) return true;  // nothing to draw

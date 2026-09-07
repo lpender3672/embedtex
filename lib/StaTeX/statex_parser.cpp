@@ -67,6 +67,7 @@ Parser::Parser(Arena& arena, NodeStore& store, u16 maxDepth, u16 maxOperands,
       _maxRows(maxMatrixRows),
       _maxCols(maxMatrixCols),
       _curFace(Face::Roman),
+      _explicitFace(false),
       _err(ParseError::Ok),
       _errPos(-1) {
   _frames = arena.allocArray<Frame>(maxDepth);
@@ -156,6 +157,7 @@ void Parser::feedOperand(Handle h) {
       // Face already applied to the argument's chars during parsing; this frame
       // just restores the previous face and passes the argument through.
       _curFace = f.savedFace;
+      _explicitFace = f.savedExplicit;
       result = h;
     } else if (f.kind == kFrac) {
       if (f.need == 2) {
@@ -291,7 +293,8 @@ int Parser::onCommand(const c32* src, int len, int i) {
     fail(ParseError::UnknownCommand, start);
     return i;
   }
-  const Handle h = _store.makeChar(e->glyph, e->type, Face::Symbol);
+  const Handle h =
+      _store.makeChar(e->glyph, e->type, Face::Symbol, e->takesLimits);
   if (!valid(h)) {
     fail(ParseError::OutOfMemory, start);
     return i;
@@ -303,7 +306,23 @@ int Parser::onCommand(const c32* src, int len, int i) {
 void Parser::onStyle(Face face) {
   if (!pushFrame(kStyle, /*need=*/1, /*rule=*/false, NO_NODE)) return;
   _frames[_depth - 1].savedFace = _curFace;
+  _frames[_depth - 1].savedExplicit = _explicitFace;
   _curFace = face;
+  _explicitFace = true;
+}
+
+/**
+ * TeX's default math alphabet: a letter is set in math italic, everything else
+ * (digits, operators, delimiters) upright. MicroTeX encodes the same rule as
+ * `mathnormal = {digits from cmr10, capitals and smalls from cmmi10}`
+ * (res/builtin/tex_param.res.cpp).
+ *
+ * Inside an explicit \mathrm / \mathit / \mathbf / \mathbb the named face
+ * wins for every character, which is why the default is a separate state and
+ * not just "Roman".
+ */
+Face Parser::faceFor(c32 c) const {
+  return _explicitFace ? _curFace : defaultMathFace(c);
 }
 
 bool Parser::endCell(Frame& f, int pos) {
@@ -441,6 +460,12 @@ int Parser::onEnd(const c32* src, int len, int i) {
     }
   }
   const u16 count = static_cast<u16>(_opTop - f.opBase);
+  // An environment with no cells is not a matrix. It used to be accepted as a
+  // 0x0 grid and rendered as nothing at all.
+  if (f.rows == 0 || f.cols == 0) {
+    fail(ParseError::InvalidMatrix, i);
+    return i;
+  }
   if (count != static_cast<u16>(f.rows * f.cols)) {
     fail(ParseError::InvalidMatrix, i);
     return i;
@@ -464,6 +489,7 @@ ParseResult Parser::parse(const c32* src, int len) {
   _depth = 0;
   _opTop = 0;
   _curFace = Face::Roman;
+  _explicitFace = false;
   if (!_ok) return {NO_NODE, ParseError::OutOfMemory, 0};
 
   pushFrame(kRoot, 0, false, NO_NODE);
@@ -517,9 +543,14 @@ ParseResult Parser::parse(const c32* src, int len) {
       i = onCommand(src, len, i);
       continue;
     }
-    // Ordinary character.
+    // Ordinary character. A few ASCII characters are set from the symbol font
+    // in math mode and are a different glyph entirely -- see mathModeGlyph.
+    // The spacing class still comes from the source character.
     ++i;
-    const Handle h = _store.makeChar(c, classify(c), _curFace);
+    const Handle h = isMathModeSymbol(c)
+                         ? _store.makeChar(mathModeGlyph(c), classify(c),
+                                           Face::Symbol)
+                         : _store.makeChar(c, classify(c), faceFor(c));
     if (!valid(h)) {
       fail(ParseError::OutOfMemory, i);
       break;

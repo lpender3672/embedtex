@@ -2,6 +2,7 @@
 #define STATEX_RENDER_H
 
 #include "statex_arena.h"
+#include "statex_draw.h"
 #include "statex_graphics.h"
 #include "statex_parser.h"
 #include "statex_types.h"
@@ -45,9 +46,13 @@ class Renderer {
  public:
   Renderer(u8* scratch, u32 scratchSize, RenderCaps caps = RenderCaps{});
 
+  // `probe`, when non-null, records where each glyph was placed. It is a
+  // diagnostic for the differential oracle -- see GlyphProbe in statex_draw.h
+  // -- and does not affect what is drawn.
   ParseError render(const c32* src, int len, float sizePx, float originX,
                     float baseline, Graphics2D& g,
-                    RenderStats* stats = nullptr);
+                    RenderStats* stats = nullptr,
+                    GlyphProbe* probe = nullptr);
 
   u32 highWater() const { return _arena.highWater(); }
 

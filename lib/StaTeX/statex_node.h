@@ -50,6 +50,9 @@ struct Node {
   Kind kind;
   AtomType atomType;
   Face face;  // meaningful for Kind::Char (STX-FNT-05); Roman otherwise
+  // Char: scripts on this atom stack above/below in display style rather than
+  // sitting beside it (TeX's \limits). Occupies what was padding.
+  bool takesLimits;
 
   struct FracData {
     Handle num;
@@ -97,8 +100,11 @@ class NodeStore {
   /** True if the backing arrays were allocated. If false, all factories refuse. */
   bool ok() const { return _ok; }
 
-  Handle makeChar(c32 ch, AtomType type = AtomType::Ordinary,
-                  Face face = Face::Roman);
+  /** Explicit face, as the parser supplies inside \mathrm and friends. */
+  Handle makeChar(c32 ch, AtomType type, Face face,
+                  bool takesLimits = false);
+  /** Face from TeX's default math alphabet (defaultMathFace). */
+  Handle makeChar(c32 ch, AtomType type = AtomType::Ordinary);
   Handle makeFrac(Handle num, Handle den, bool rule = true);
   Handle makeScript(Handle base, Handle sup, Handle sub);
   Handle makeSqrt(Handle base, Handle index = NO_NODE);

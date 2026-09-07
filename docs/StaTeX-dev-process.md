@@ -38,8 +38,12 @@ The requirements removed every barrier to native testing:
 ⇒ The core (arena, parser, layout, draw-op generation) compiles and runs **natively** with no
 Arduino, no Teensy, no display. Only glyph *pixels* and the real TFT need hardware (§8).
 
-**Infrastructure:** add a `[env:native]` PlatformIO target (`platform = native`) running the
-built-in Unity framework (or GoogleTest), tests under `test/`. CI = `pio test -e native`.
+**Infrastructure:** *(Built.)* CMake is the host workflow — `cmake -S . -B build -G Ninja`
+then `ctest --test-dir build`. Suites live under `tests/` (see `tests/README.md`) and are
+labelled `green` (the gate) or `red` (known-open defects, failing on purpose per §1).
+`tests/framework/unity.h` is a dependency-free Unity-compatible shim, so no external test
+framework is needed. PlatformIO still runs the per-module suites via
+`test_dir = tests/unit`; CI = `ctest --test-dir build -L green`.
 Determinism (no heap, no clock dependence) makes every test bit-reproducible.
 
 ---
@@ -67,15 +71,29 @@ subset StaTeX supports: feed the same formula to both in one test process and co
 turns golden generation from hand-computed TeX metrics into "ask the reference" — the biggest
 single accelerator for Phase 5 (layout) and Phase 7 (integration).
 
-**Wiring.** A `[env:native_oracle]` (or a test tag) links the legacy `lib/MicroTeX/` *for
-tests only* — it is never shipped (STX-BLD-02). A small adapter runs MicroTeX's
-`createBox`/draw through the same recording backend and serializer used for StaTeX, so both
-sides emit comparable op-lists / tree dumps.
+**Wiring.** *(Built: `tests/oracle/`, behind the CMake option `STATEX_BUILD_ORACLE`.)*
+The legacy `lib/MicroTeX/` is linked *for tests only* — it is never shipped (STX-BLD-02);
+`platformio.ini` does not reference it. `tests/oracle/microtex_host.cpp` ports MicroTeX's
+platform interface (`tex::Font`, `tex::TextLayout`, `tex::Graphics2D`) to a recorder, so
+MicroTeX's real layout runs and its glyph placements are read back out.
+
+The split is deliberate: **MicroTeX supplies every layer StaTeX reimplements, and only the
+layer beneath them — turning "slot 0x32 of cmex10 at size z" into pixels, which every
+MicroTeX port has to provide — is supplied by us.** `tests/oracle/ft_raster.cpp` does that
+with FreeType and the real Computer Modern faces in `tests/oracle/fonts/` (test-only; the
+firmware still ships neither). The reference is therefore genuine TeX output rather than an
+approximation of it, and the two pictures are scored by the image-similarity engine in
+`tests/support/stx_compare.h`. See `tests/README.md`.
 
 **Three preconditions for the comparison to mean anything:**
 - **Same metric source.** StaTeX's flash tables (STX-RES-01) must be generated from the very
   values MicroTeX uses (`lib/MicroTeX/res/builtin/*.res.cpp`, `lib/MicroTeX/res/font/*.def.cpp`).
   Otherwise divergence is just different input numbers, not an algorithm bug.
+  **Not met today**, which is why `tests/oracle/test_oracle_diff.cpp` is red: the fourteen
+  constants in `lib/StaTeX/statex_fontparams.h` are hand-picked rather than taken from
+  `tex_param.res.cpp`, and the per-glyph metrics come from Latin Modern via `tools/genfont`
+  rather than from `res/font/*.def.cpp`. The differential currently *measures the gap*; it
+  goes green when the flash tables are regenerated from MicroTeX's numbers.
 - **Tolerance, not equality.** Metrics are floats; the two codepaths round differently. Compare
   positions/metrics within a sub-pixel epsilon.
 - **Same backend + serializer.** Both libraries must funnel through the §3 fixtures so the

@@ -12,7 +12,7 @@ Renderer::Renderer(u8* scratch, u32 scratchSize, RenderCaps caps)
 
 ParseError Renderer::render(const c32* src, int len, float sizePx,
                             float originX, float baseline, Graphics2D& g,
-                            RenderStats* stats) {
+                            RenderStats* stats, GlyphProbe* probe) {
   _arena.reset();  // self-contained: no residue from prior renders (STX-API-02)
 
   // Box store lives at the bottom of the arena: it must survive into the draw
@@ -40,7 +40,7 @@ ParseError Renderer::render(const c32* src, int len, float sizePx,
     LayoutResult lr = layout.run(pr.root);
     if (!lr.ok) {
       _arena.reset();
-      return ParseError::OutOfMemory;
+      return lr.error;
     }
     rootBox = lr.rootBox;
   }
@@ -55,7 +55,8 @@ ParseError Renderer::render(const c32* src, int len, float sizePx,
   // Free atoms/parser/layout scratch; keep the box tree for drawing.
   _arena.rewind(mk);
 
-  const bool drawn = drawTree(_arena, boxes, rootBox, originX, baseline, g);
+  const bool drawn =
+      drawTree(_arena, boxes, rootBox, originX, baseline, g, probe);
   if (stats != nullptr) stats->highWater = _arena.highWater();
 
   if (!drawn) {

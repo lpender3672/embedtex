@@ -15,13 +15,19 @@ NodeStore::NodeStore(Arena& arena, u16 maxNodes, u16 maxChildren)
   _ok = (_nodes != nullptr) && (_children != nullptr);
 }
 
-Handle NodeStore::makeChar(c32 ch, AtomType type, Face face) {
+Handle NodeStore::makeChar(c32 ch, AtomType type) {
+  return makeChar(ch, type, defaultMathFace(ch), false);
+}
+
+Handle NodeStore::makeChar(c32 ch, AtomType type, Face face,
+                           bool takesLimits) {
   if (!_ok || _count >= _cap) return NO_NODE;
   const Handle h = _count++;
   Node& n = _nodes[h];
   n.kind = Kind::Char;
   n.atomType = type;
   n.face = face;
+  n.takesLimits = takesLimits;
   n.ch = ch;
   return h;
 }
@@ -32,6 +38,7 @@ Handle NodeStore::makeFrac(Handle num, Handle den, bool rule) {
   const Handle h = _count++;
   Node& n = _nodes[h];
   n.kind = Kind::Frac;
+  n.takesLimits = false;
   n.atomType = AtomType::Inner;
   n.frac = Node::FracData{num, den, rule};
   return h;
@@ -45,7 +52,11 @@ Handle NodeStore::makeScript(Handle base, Handle sup, Handle sub) {
   const Handle h = _count++;
   Node& n = _nodes[h];
   n.kind = Kind::Script;
-  n.atomType = AtomType::Ordinary;
+  n.takesLimits = false;
+  // A scripted atom keeps its base's spacing class -- `\sum_{i}^{n}` is still
+  // a big operator and must be spaced as one, not as an Ordinary. Mirrors
+  // ScriptsAtom::leftType/rightType (lib/MicroTeX/atom/atom_basic.h:564-570).
+  n.atomType = _nodes[base].atomType;
   n.script = Node::ScriptData{base, sup, sub};
   return h;
 }
@@ -56,6 +67,7 @@ Handle NodeStore::makeSqrt(Handle base, Handle index) {
   const Handle h = _count++;
   Node& n = _nodes[h];
   n.kind = Kind::Sqrt;
+  n.takesLimits = false;
   n.atomType = AtomType::Ordinary;
   n.sqrt = Node::SqrtData{base, index};
   return h;
@@ -75,6 +87,7 @@ Handle NodeStore::makeRow(const Handle* items, u16 count) {
   const Handle h = _count++;
   Node& n = _nodes[h];
   n.kind = Kind::Row;
+  n.takesLimits = false;
   n.atomType = AtomType::Ordinary;
   n.children = Span{first, count};
   return h;
@@ -83,7 +96,16 @@ Handle NodeStore::makeRow(const Handle* items, u16 count) {
 Handle NodeStore::makeMatrix(u16 rows, u16 cols, MatrixEnv env,
                              const Handle* cells, u16 count) {
   if (!_ok || _count >= _cap) return NO_NODE;
-  if (count != static_cast<u16>(rows * cols)) return NO_NODE;
+  // Compare in a width that cannot overflow. `rows * cols` truncated to u16
+  // let (256, 256) past this guard with count 0, producing a node claiming a
+  // 65536-cell grid over an empty span -- cell() and cellAt() would then read
+  // off the end of the child buffer.
+  const u32 product = static_cast<u32>(rows) * static_cast<u32>(cols);
+  if (product != static_cast<u32>(count)) return NO_NODE;
+  // A grid with no rows or no columns is not a matrix. Without this, any
+  // (n, 0) pair satisfies the product check with count 0 and yields a node
+  // claiming n rows over an empty span.
+  if (rows == 0 || cols == 0) return NO_NODE;
   for (u16 i = 0; i < count; ++i) {
     if (!valid(cells[i])) return NO_NODE;
   }
@@ -93,6 +115,7 @@ Handle NodeStore::makeMatrix(u16 rows, u16 cols, MatrixEnv env,
   const Handle h = _count++;
   Node& n = _nodes[h];
   n.kind = Kind::Matrix;
+  n.takesLimits = false;
   n.atomType = AtomType::Inner;
   n.matrix = Node::MatrixData{rows, cols, env, Span{first, count}};
   return h;

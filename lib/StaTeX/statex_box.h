@@ -24,6 +24,11 @@ enum class BoxKind : u8 {
 struct Box {
   BoxKind kind;
   Face face;     // Char: the glyph's face (for SDF lookup at draw time)
+  // Char: which size variant layout chose (0 = text size). The draw walk must
+  // fetch the same record layout measured, or a big operator would be
+  // positioned from the display design's metrics and then drawn with the text
+  // one. Occupies what was padding between `face` and `width`.
+  u8 variant;
   float width;
   float height;  // extent above baseline
   float depth;   // extent below baseline
@@ -41,7 +46,8 @@ class BoxStore {
   BoxStore(Arena& arena, u16 maxBoxes, u16 maxChildren);
   bool ok() const { return _ok; }
 
-  Handle makeChar(c32 ch, Face face, float emPx, float w, float h, float d);
+  Handle makeChar(c32 ch, Face face, float emPx, float w, float h, float d,
+                  u8 variant = 0);
   Handle makeRule(float w, float h, float d);
   /** Build a list box with explicit metrics; copies child handles. */
   Handle makeList(BoxKind kind, const Handle* items, u16 count, float w,

@@ -16,6 +16,11 @@ struct SymbolEntry {
   const char* name;
   c32 glyph;
   AtomType type;
+  // Whether scripts on this symbol stack above and below it in display style
+  // rather than sitting beside it. TeX's `\limits` / `\nolimits`: `\sum`
+  // takes limits, `\int` does not, and that is per-symbol data rather than
+  // anything derivable from the atom type -- both are big operators.
+  bool takesLimits;
 };
 
 /**

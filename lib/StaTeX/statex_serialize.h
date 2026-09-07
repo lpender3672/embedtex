@@ -35,7 +35,7 @@ namespace statex {
  * Box-tree structure dumper (test fixture). Emits class structure only, not
  * metrics:
  *   Char  -> glyph (ASCII) or `<U+XXXX>`
- *   HList -> `(H c0 c1 ...)`
+ *   HList -> `(H c0 c1 ...)`, or `_` when childless (a strut: width, no ink)
  *   VList -> `(V c0 c1 ...)`
  *   Rule  -> `R`
  * Returns chars written (excl. NUL), or -1 on overflow.

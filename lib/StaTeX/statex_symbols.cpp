@@ -6,20 +6,20 @@ namespace {
 // Compile-time-sorted by `name` (ASCII). Keep this list sorted; the
 // static_assert below enforces it at build time (STX-RES-01).
 constexpr SymbolEntry kSymbols[] = {
-    {"alpha", 0x03B1, AtomType::Ordinary},
-    {"beta", 0x03B2, AtomType::Ordinary},
-    {"cdot", 0x22C5, AtomType::BinaryOp},
-    {"gamma", 0x03B3, AtomType::Ordinary},
-    {"geq", 0x2265, AtomType::Relation},
-    {"infty", 0x221E, AtomType::Ordinary},
-    {"int", 0x222B, AtomType::BigOp},
-    {"leq", 0x2264, AtomType::Relation},
-    {"omega", 0x03C9, AtomType::Ordinary},
-    {"phi", 0x03D5, AtomType::Ordinary},
-    {"pi", 0x03C0, AtomType::Ordinary},
-    {"sum", 0x2211, AtomType::BigOp},
-    {"theta", 0x03B8, AtomType::Ordinary},
-    {"times", 0x00D7, AtomType::BinaryOp},
+    {"alpha", 0x03B1, AtomType::Ordinary, false},
+    {"beta", 0x03B2, AtomType::Ordinary, false},
+    {"cdot", 0x22C5, AtomType::BinaryOp, false},
+    {"gamma", 0x03B3, AtomType::Ordinary, false},
+    {"geq", 0x2265, AtomType::Relation, false},
+    {"infty", 0x221E, AtomType::Ordinary, false},
+    {"int", 0x222B, AtomType::BigOp, false},
+    {"leq", 0x2264, AtomType::Relation, false},
+    {"omega", 0x03C9, AtomType::Ordinary, false},
+    {"phi", 0x03D5, AtomType::Ordinary, false},
+    {"pi", 0x03C0, AtomType::Ordinary, false},
+    {"sum", 0x2211, AtomType::BigOp, true},
+    {"theta", 0x03B8, AtomType::Ordinary, false},
+    {"times", 0x00D7, AtomType::BinaryOp, false},
 };
 
 constexpr int kCount = static_cast<int>(sizeof(kSymbols) / sizeof(kSymbols[0]));

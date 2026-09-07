@@ -27,11 +27,12 @@ Handle BoxStore::make(BoxKind kind) {
 }
 
 Handle BoxStore::makeChar(c32 ch, Face face, float emPx, float w, float h,
-                          float d) {
+                          float d, u8 variant) {
   const Handle bh = make(BoxKind::Char);
   if (!valid(bh)) return NO_NODE;
   Box& b = _boxes[bh];
   b.face = face;
+  b.variant = variant;
   b.emPx = emPx;
   b.width = w;
   b.height = h;

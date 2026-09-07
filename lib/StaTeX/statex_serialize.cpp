@@ -61,12 +61,18 @@ void dump(const NodeStore& s, Handle h, Writer& w, int depth) {
         }
         w.put('>');
       }
-      // Face marker for non-Roman so style selection is assertable.
-      switch (n.face) {
-        case Face::Italic: w.puts("!i"); break;
-        case Face::Bold: w.puts("!b"); break;
-        case Face::Blackboard: w.puts("!bb"); break;
-        default: break;  // Roman and Symbol print unmarked
+      // Face marker, but only when the face differs from the one TeX's
+      // default math alphabet would pick (letters italic, everything else
+      // upright -- see Parser::faceFor). Marking every letter `!i` once italic
+      // became the default would have been pure noise in every golden.
+      if (n.face != defaultMathFace(n.ch)) {
+        switch (n.face) {
+          case Face::Roman: w.puts("!r"); break;
+          case Face::Italic: w.puts("!i"); break;
+          case Face::Bold: w.puts("!b"); break;
+          case Face::Blackboard: w.puts("!bb"); break;
+          case Face::Symbol: break;  // implied by a symbol-table codepoint
+        }
       }
       break;
     case Kind::Row:
@@ -177,6 +183,13 @@ void dumpBox(const BoxStore& s, Handle h, Writer& w, int depth) {
       break;
     case BoxKind::HList:
     case BoxKind::VList: {
+      // A childless list is a strut: it carries width (inter-atom glue, a
+      // centring pad) but no ink. `_` keeps goldens readable, where the
+      // structural form would be a bare `(H)`.
+      if (b.children.count == 0) {
+        w.put('_');
+        break;
+      }
       w.put('(');
       w.put(b.kind == BoxKind::HList ? 'H' : 'V');
       for (u16 i = 0; i < b.children.count; ++i) {
