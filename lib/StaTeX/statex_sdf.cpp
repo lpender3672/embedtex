@@ -70,10 +70,13 @@ bool renderGlyphCoverage(const GlyphRecord& g, const u8* sdfBase, int spread256,
   // --- Texel-space DDA ----------------------------------------------------
   //
   // `u` advances by a constant step per output pixel, so the per-pixel
-  // `(px + 0.5f) / w` becomes an accumulator. Q16 throughout: the step is
-  // computed once in 64-bit, the walk is 32-bit.
-  const i32 du = static_cast<i32>((static_cast<std::int64_t>(sw) << 16) / w);
-  const i32 dv = static_cast<i32>((static_cast<std::int64_t>(sh) << 16) / h);
+  // `(px + 0.5f) / w` becomes an accumulator. Q16 throughout, and 32-bit: the
+  // SDF dimensions are u8, so `255 << 16` is 16.7M and cannot overflow. Using
+  // 64-bit here would be free on the host and two `__aeabi_uldivmod` calls per
+  // glyph on the target, which is the only reason the library would need a
+  // 64-bit divide helper at all.
+  const i32 du = (static_cast<i32>(sw) << 16) / w;
+  const i32 dv = (static_cast<i32>(sh) << 16) / h;
   const i32 u0 = (du >> 1) - 32768;  // pixel centre 0.5 mapped in, minus 0.5
   const i32 v0 = (dv >> 1) - 32768;
 

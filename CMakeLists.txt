@@ -65,7 +65,6 @@ file(GLOB STATEX_SOURCES CONFIGURE_DEPENDS "${CMAKE_CURRENT_SOURCE_DIR}/lib/StaT
 
 add_library(statex STATIC ${STATEX_SOURCES})
 target_include_directories(statex PUBLIC "${CMAKE_CURRENT_SOURCE_DIR}/lib/StaTeX")
-target_compile_definitions(statex PUBLIC STATEX_HOST_TEST)
 target_link_libraries(statex PRIVATE statex_warnings statex_safety)
 # statex_safety is INTERFACE-propagated to consumers of the *core* only where
 # they ask for it; the tests deliberately build with exceptions so they can

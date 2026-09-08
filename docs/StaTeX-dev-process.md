@@ -42,8 +42,9 @@ Arduino, no Teensy, no display. Only glyph *pixels* and the real TFT need hardwa
 then `ctest --test-dir build`. Suites live under `tests/` (see `tests/README.md`) and are
 labelled `green` (the gate) or `red` (known-open defects, failing on purpose per §1).
 `tests/framework/unity.h` is a dependency-free Unity-compatible shim, so no external test
-framework is needed. PlatformIO still runs the per-module suites via
-`test_dir = tests/unit`; CI = `ctest --test-dir build -L green`.
+framework is needed. CI = `ctest --test-dir build -L green`. The Teensy firmware is a
+separate CMake project under `targets/teensy41/`, cross-compiled with its own toolchain
+file; it shares `lib/StaTeX` as sources and builds nothing from `tests/`.
 Determinism (no heap, no clock dependence) makes every test bit-reproducible.
 
 ---
@@ -73,7 +74,7 @@ single accelerator for Phase 5 (layout) and Phase 7 (integration).
 
 **Wiring.** *(Built: `tests/oracle/`, behind the CMake option `STATEX_BUILD_ORACLE`.)*
 The legacy `lib/MicroTeX/` is linked *for tests only* — it is never shipped (STX-BLD-02);
-`platformio.ini` does not reference it. `tests/oracle/microtex_host.cpp` ports MicroTeX's
+the firmware project under `targets/teensy41/` does not reference it. `tests/oracle/microtex_host.cpp` ports MicroTeX's
 platform interface (`tex::Font`, `tex::TextLayout`, `tex::Graphics2D`) to a recorder, so
 MicroTeX's real layout runs and its glyph placements are read back out.
 
@@ -121,7 +122,7 @@ on earlier ones.
 
 ### Phase 0 — Harness
 Native env + Unity wired; a `PASS` smoke test; serializer and recording-backend skeletons
-stubbed. *Green when `pio test -e native` runs and the smoke test passes.*
+stubbed. *Green when `ctest --test-dir build -L unit` runs and the smoke test passes.*
 
 ### Phase 1 — Arena + handle pools  (STX-MEM-01/02/03/04/06, STX-EXE-02)
 *Stub:* `alloc()` always returns null; `reset()` no-op.

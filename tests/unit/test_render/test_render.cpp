@@ -2,7 +2,7 @@
 // STX-MEM-03/05, STX-API-01/02, STX-ERR-03.
 #include <unity.h>
 #include <statex_render.h>
-#include <statex_record.h>
+#include <stx_record.h>
 
 using namespace statex;
 

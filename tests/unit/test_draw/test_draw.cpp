@@ -4,7 +4,7 @@
 #include <statex_parser.h>
 #include <statex_layout.h>
 #include <statex_draw.h>
-#include <statex_record.h>
+#include <stx_record.h>
 
 using namespace statex;
 

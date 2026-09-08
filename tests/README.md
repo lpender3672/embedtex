@@ -1,7 +1,7 @@
 # StaTeX tests
 
-One test tree. CMake is the primary host workflow; PlatformIO still builds the
-Teensy image and can still run `tests/unit`.
+One test tree, built by CMake. The Teensy firmware is a separate CMake project
+under `targets/teensy41/` (see its README); PlatformIO is gone.
 
 ```
 tests/
@@ -35,11 +35,11 @@ defect suites are supposed to fail. Use the labels:
 Options: `-DSTATEX_BUILD_ORACLE=OFF` skips building MicroTeX (much faster
 configure), `-DSTATEX_WERROR=ON` for CI.
 
-PlatformIO still works for what it is still for:
+The firmware is built and flashed from its own project:
 
 ```sh
-pio run -e teensy41     # the firmware
-pio test -e native      # tests/unit only (test_dir in platformio.ini)
+cmake -S targets/teensy41 -B build-teensy41 -G Ninja       -DCMAKE_TOOLCHAIN_FILE=$PWD/cmake/toolchain-teensy41.cmake
+cmake --build build-teensy41 --target flash
 ```
 
 ## The red/green policy
