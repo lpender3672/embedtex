@@ -63,13 +63,19 @@ generation — fixing that clip exposed a real limit rather than creating one.
 Raising the budget costs coverage scratch in the arena, so it is a memory trade
 rather than a free fix.
 
-### Performance has never been looked at
+### SDF boxes are wider than the ink
 
-From the original survey and still true: the SDF sampler does two divisions per
-output pixel (`statex_sdf.cpp`), roughly 28 cycles/pixel of avoidable cost, and
-SDF boxes are 1.28× the ink bbox so tightening them is worth 20–25%. Neither
-has been measured on hardware. There is no perf guard in the harness either — a
-layout change that doubled the sampling work would pass silently.
+A glyph rasterises over its ink box plus the distance-field pad, and the pad is
+all zeros. Clipping the output rect to the record's ink fields saves 21% of
+coverage pixels at 22px, 27% at 36px, 35% at 64px. A 1px AA margin is not
+enough — it cuts 17 inked pixels at 22px and 524 at 64px — so use 2px, or have
+genfont emit an exact ink bbox, which is worth ~40%.
+
+A coverage cache is *not* the adjacent win it looks like: the showcase places
+21 glyphs of which 20 are distinct, so a cache buys 2%.
+
+Nothing has been measured on hardware, and there is no perf guard in the
+harness — a layout change that doubled the sampling work would pass silently.
 
 ### genfont hygiene
 
