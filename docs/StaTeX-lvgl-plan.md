@@ -159,41 +159,67 @@ a completely unrelated 30-method legacy interface, as are `Graphics2D_tft` and
 (same before/after capture technique used for the sampler change). Teensy image
 rebuilds and reflashes; panel unchanged.
 
-### Phase 2 — Vendor LVGL, make it build
+### Phase 2 — the A8 coverage backend, with **no LVGL at all**
+
+The valuable realisation from the design pass: the compositing class needs
+nothing from LVGL. It is a `Graphics2D` that writes into a `uint8_t*` with a
+stride. So it comes first, is host-testable, and de-risks the whole idea before
+a line of integration exists.
+
+- `backends/statex_a8/statex_a8.h`: `statex::backends::CoverageGraphics`,
+  writing into a caller-supplied byte grid. Clips like
+  `Ili9488::blitCoverage` does. Composites with **`max`** (see Risks).
+  `fillRect` becomes a `memset` of the rule rect, keeping the existing
+  min-1px rounding.
+- Host test: render corpus formulas through it, dump via
+  `tests/support/stx_png.h`, and compare against the `ImageGraphics` render
+  with the existing similarity engine.
+
+**Verify:** the A8 grid and the direct render agree on ink, with no hardware
+and no LVGL in the build.
+
+### Phase 3 — Vendor LVGL, make it build
 
 - `vendor/lvgl/` at **v9.5.0**, pinned to commit
-  `85aa60d18b3d5e5588d7b247abf90198f07c8a63` (verified reachable), trimmed of
-  `docs/`, `tests/`, `examples/`, `demos/` and unused ports. The pin goes in
-  `vendor/README.md` next to the other SDKs.
-- Shared base `lv_conf.h` with per-target overrides. Memory:
-  `LV_USE_STDLIB_MALLOC = LV_STDLIB_BUILTIN` with a fixed `LV_MEM_SIZE` (and
-  `LV_MEM_ADR` if we want it in a named region) — LVGL's TLSF pool is O(1) and
-  needs no system `malloc`, which keeps the determinism story as close to
-  StaTeX's as LVGL allows.
-- CMake: `add_subdirectory` with `LV_CONF_PATH` set as a `CACHE STRING ... FORCE`
-  *before* it (a known v9 pitfall if formatted wrongly).
+  `85aa60d18b3d5e5588d7b247abf90198f07c8a63` (verified reachable). Prune
+  top-level only — `tests/` (65 MB), `demos/`, `scripts/`, `docs/`,
+  `examples/`, `env_support/cmsis-pack`, `libs/nema_gfx`. **Nothing under
+  `src/`**, because `lvgl.h` includes every widget header unconditionally.
+  ~180 MB → ~21 MB. Record the exclusions and that reason in
+  `vendor/README.md`.
+- `targets/teensy41/lv_conf.h` from the template — one file, in the target, not
+  a shared base. The U5's config will diverge in more than colour depth and
+  pool size (LTDC, DMA2D, direct-render mode, alignment), which is the same
+  shape of divergence the layering doc describes for the two display stacks.
+  Factor it out when the second one exists and shows the seam.
+- Memory: `LV_USE_STDLIB_MALLOC = LV_STDLIB_BUILTIN` with a fixed `LV_MEM_SIZE`
+  — a static TLSF pool, no system `malloc`, and `lv_mem_monitor()` for a
+  measured high-water mark, which is the same discipline as STX-MEM-02.
+- CMake: set `LV_BUILD_CONF_PATH` (**not** `LV_CONF_PATH`) plus the three
+  `CONFIG_LV_*` options `OFF` before `add_subdirectory`. LVGL must be added
+  *after* the existing `add_compile_options`, so it inherits the Cortex-M7
+  arch flags.
 
-**Verify:** LVGL compiles for the Teensy toolchain and links into a firmware
-that does nothing with it yet. Report flash/RAM delta.
-
-### Phase 3 — `backends/lvgl` A8 backend, tested on the host
-
-- `backends/lvgl/statex_lv_canvas.h`: `statex::backends::LvCanvasGraphics`
-  writing coverage into an A8 `lv_draw_buf`, honouring `Paint::opa`, ignoring
-  `Paint::rgb`.
-- Host test: render a corpus formula into an A8 buffer, dump via the existing
-  `tests/support/stx_png.h`, compare against the `ImageGraphics` render.
-
-**Verify:** the A8 path and the direct path agree on ink. This is the phase
-that proves the idea *without hardware*, which is why it comes before the port.
+**Verify:** LVGL links into a firmware that only calls `lv_init()`. Run
+`arm-none-eabi-size` — this is the measurement that says whether the DTCM
+problem in Risks needs the linker-script fix.
 
 ### Phase 4 — Teensy LVGL port, on the panel
 
-- `lv_tick` from `millis()`, `lv_timer_handler()` in `loop()`.
-- `flush_cb` → `drivers::Ili9488`. **Colour format matters:** the ILI9488 is
-  18-bit over SPI, so set LVGL to RGB888 and shift to 6-6-6 in the flush, which
-  is the cheapest conversion. A partial draw buffer (~1/10 screen) keeps RAM
-  small.
+- `lv_tick_set_cb(millis)` — v9 has no `LV_TICK_CUSTOM`, and `millis` is an
+  exact type match for `uint32_t(*)(void)`, so no ISR is needed.
+  `lv_timer_handler_run_in_period(5)` in `loop()`.
+- **`drivers::Ili9488` needs one new entry point:** `blitRgb888(x, y, w, h,
+  const uint8_t* rgb)` — one address window then a single bus write. LVGL's
+  flush hands over a raw pixel block, and neither `fillRect` nor
+  `blitCoverage` can take one. The driver's contract stays in the panel's own
+  terms; LVGL's byte order is the backend's problem.
+- `backends/lvgl_ili9488/` holds the `flush_cb` — it knows LVGL and the driver
+  and nothing about the board, so by the layering rule it is a backend, not
+  target code.
+- A partial draw buffer of ~1/10 screen (480×32 RGB888 = 46 KB) in `DMAMEM`,
+  single-buffered because the flush is synchronous. Note `lv_area_t` bounds are
+  **inclusive** — `w = x2 - x1 + 1`.
 - No input: the Teensy rig has no touch wired (`TOUCH_CS` was never defined),
   so scrolling is exercised programmatically for now.
 - `ui/lv_statex`: helper creating an `lv_image` over a static A8 buffer with
@@ -226,26 +252,80 @@ it is distinct from LVGL's own draw units.
 
 ---
 
-## Mechanical details still to confirm (Phase 2 blockers, not design risks)
+## Mechanics, verified against the v9.5.0 tag
 
-A second design pass on the LVGL wiring is still running; none of these change
-the architecture above, but each needs to be right before Phase 2 lands:
+**The A8 idea holds — confirmed in source, not inferred.**
+`src/draw/sw/lv_draw_sw_img.c` has an explicit fast path:
+`if(!transformed && !radius && cf == LV_COLOR_FORMAT_A8)` sets the A8 bytes as
+`blend_dsc.mask_buf` and `draw_dsc->recolor` as `blend_dsc.color`, straight into
+the RGB888 blend. And `lv_bin_decoder.c` deliberately excludes A8 from the
+"alpha-only formats get expanded" branch, so a static A8 buffer is passed
+through **zero-copy** — LVGL never allocates or takes ownership of it.
 
-- Exact `flush_cb` signature and `lv_display_flush_ready()` timing in v9.5
-  (synchronous vs after a DMA completes).
-- Draw-buffer sizing for partial rendering, and whether RGB888 or RGB565 is the
-  better LVGL colour depth given the ILI9488's 18-bit bus — RGB888→666 is a
-  shift, RGB565→666 an expand, and the draw buffer costs differ.
-- Whether v9.5 renders an A8 image with `img_recolor` on **all** draw units, or
-  only the software one. If only software, the U5 acceleration story needs the
-  canvas in a different format and this is worth knowing before Phase 3.
-- `LV_DRAW_BUF_DEFINE_STATIC` usage and the `lv_image`/`lv_canvas` lifecycle.
-- Which `lv_conf.h` widgets/fonts to disable to keep flash small.
+**Colour depth: `LV_COLOR_DEPTH 24`.** `lv_color_t` is unconditionally
+`{blue, green, red}` in v9, so LVGL's RGB888 is B,G,R and the panel wants
+R,G,B — the conversion is a three-byte reversal, in place. RGB565 would need a
+*second* staging buffer, because 2→3 bytes cannot expand in place. The swap on
+a 480×32 area is ~0.10 ms against 18.4 ms of SPI for the same block: 0.5% of
+the flush.
+
+**`lv_display_flush_ready()` synchronously**, at the end of `flush_cb`.
+`TeensySpiBus::write` is a polled FIFO loop, not DMA, so the bytes are gone when
+it returns. Calling it early lets LVGL render into a buffer still being
+transmitted — intermittent tearing, miserable to diagnose.
+
+### Corrections to earlier assumptions
+
+- **`LV_CONF_PATH` is not the v9.5 CMake variable.** The v8-era
+  `set(LV_CONF_PATH ... CACHE STRING "" FORCE)` is silently ignored. It is
+  `LV_BUILD_CONF_PATH` (type `PATH`), from which LVGL derives the `LV_CONF_PATH`
+  *compiler* define. Getting this wrong yields a working build against every
+  default — 16-bit colour, 64 KB heap, all widgets on — with no error.
+- **`vendor/lvgl/src/` cannot be pruned.** `lvgl.h` includes every widget and
+  lib header unconditionally, with no `#if LV_USE_*` guard. Disabled features
+  cost nothing anyway: the `.c` bodies are guarded and compile to empty objects.
+  Pruning is top-level directories only (~180 MB → ~21 MB).
+- **`CONFIG_LV_USE_THORVG_INTERNAL` must be `OFF`** or its source glob is empty
+  and `add_library()` is a hard configure error.
+- **`lv_conf_template.h` opens with `#if 0`.** Change it to `#if 1` first; the
+  only symptom otherwise is a `#pragma message` in the build log.
+
+### Still unverified
+
+- **A8 + recolour on hardware draw units.** Verified for `LV_USE_DRAW_SW`,
+  which is the only unit on the Teensy. Not audited for DMA2D / NemaGFX /
+  VG-Lite. Each accelerator's `_evaluate` step is *supposed* to decline work it
+  cannot do and fall back to software, but that is architecture, not evidence.
+  Re-check when the U5 enables a hardware unit.
+- **`LV_COLOR_DEPTH 24` render correctness.** Upstream CI builds 24-bit but
+  only render-tests 32-bit. Test a gradient, an alpha-blended rect and the A8
+  image early rather than trusting it.
 
 I will fold the answers into Phase 2/3 rather than guessing at them.
 
 ## Risks
 
+- **On the Teensy, `.rodata` lands in DTCM, not flash.**
+  `targets/teensy41/imxrt1062_t41_xip.ld` routes `*(.rodata*)` into
+  `.data > DTCM`, so every `const lv_obj_class_t`, style table, font glyph
+  descriptor and kern table LVGL contributes is copied into RAM1 at boot. This
+  is the least obvious cost of adding LVGL to *this* target. DTCM is 480 KB,
+  96 KB of it already StaTeX's scratch, `bss` at 113 KB — there is headroom,
+  but it must be measured with `arm-none-eabi-size` right after LVGL first
+  links, not assumed. The targeted mitigation is one line, because LVGL marks
+  the right array: `#define LV_ATTRIBUTE_LARGE_CONST __attribute__((section(".progmem")))`
+  puts font bitmaps in flash, exactly as `STATEX_FLASH` already does for the
+  SDF atlas.
+- **Overlapping glyph boxes.** Compositing into an accumulator is *not* the
+  same as writing straight to a panel. Glyph boxes overlap — an integral
+  against its limits, italic kerning, a radical overbar — and the current
+  ILI9488 backend never noticed because later writes simply overwrote earlier
+  ones on the wire. The A8 writer must use **`max`**, not overwrite and not
+  saturating add: `max` is idempotent, add darkens crossings into visible blobs.
+- **`LV_DRAW_LAYER_SIMPLE_BUF_SIZE` defaults to 24 KB** and is allocated out of
+  `LV_MEM_SIZE` the first time any widget needs a simple layer (any
+  `style_opa < 255`, any transform). With a 32 KB pool that is a near-certain
+  out-of-memory. Set it to 8 KB or avoid those styles.
 - **Teensy flush bandwidth.** Full-screen RGB666 over 20 MHz SPI is ~184 ms.
   Partial buffers and small damage rects keep it usable; smooth full-screen
   scrolling is not achievable on this rig and is a U5 capability.
