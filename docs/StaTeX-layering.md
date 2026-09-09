@@ -3,6 +3,11 @@
 The question this answers: *how do you pair hardware with drivers when different
 boards have entirely different peripherals?*
 
+This document covers *where code lives*. `StaTeX-app-architecture.md` covers
+*how an application gets on screen* — the LVGL integration points, why colour
+belongs to the compositor, and why app isolation is the MPU's job rather than
+TrustZone's.
+
 The answer is that you don't try. **There is no middle HAL layer in this repo,
 and adding one would be a mistake.** This document exists because that is a
 tempting thing to add, and the reason not to is not obvious.
