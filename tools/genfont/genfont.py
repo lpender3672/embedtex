@@ -187,7 +187,7 @@ def cm_font(name, render_px):
 # Must match kFirstPieceVariant in lib/glyphstore/statex_glyphstore.h.
 # A middle piece is rare but real: cmex10 slots 56 and 57, the big braces, have
 # one, so the recipe is not always just top/repeat/bottom.
-PIECE_TOP, PIECE_MIDDLE, PIECE_REPEAT, PIECE_BOTTOM = 8, 11, 9, 10
+PIECE_TOP, PIECE_MIDDLE, PIECE_REPEAT, PIECE_BOTTOM = 64, 65, 66, 67
 
 def _chain(font, slot):
     """Walk one glyph's LARGERS chain, then its extensible recipe.

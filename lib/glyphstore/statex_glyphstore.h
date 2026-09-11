@@ -104,10 +104,20 @@ inline GlyphBox glyphCoverageSize(const GlyphRecord& g, float emPx) {
  * "smallest that fits" walk -- a repeat tile is 0.6 em and would be chosen in
  * preference to the 2.4 em bracket it is meant to extend.
  */
-constexpr u8 kFirstPieceVariant = 8;
-constexpr u8 kPieceTop = 8;
-constexpr u8 kPieceRepeat = 9;
-constexpr u8 kPieceBottom = 10;
+// 64 rather than 8: the threshold only has to sit above the longest size
+// chain, and the longest across the whole symbol suite is 4 -- so 8 was never
+// in danger. It is raised because the field is a u8 with nothing else in it,
+// the gap costs no space, and a numbering that cannot plausibly be reached is
+// one fewer thing to reason about when a font is swapped.
+constexpr u8 kFirstPieceVariant = 64;
+constexpr u8 kPieceTop = 64;
+// Rare but real: cmex10 slots 56 and 57 -- the big braces -- name a middle
+// piece, and four symbols in the suite use one. A recipe with a middle is
+// stacked top, middle, bottom with repeats filling both halves, rather than
+// top, repeats, bottom.
+constexpr u8 kPieceMiddle = 65;
+constexpr u8 kPieceRepeat = 66;
+constexpr u8 kPieceBottom = 67;
 
 /** Look up the text-size glyph by face+codepoint, or nullptr (STX-LNG-02). */
 const GlyphRecord* findGlyphRecord(Face face, c32 cp);
