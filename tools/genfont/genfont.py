@@ -7,17 +7,25 @@ metrics, and emits a constexpr C++ glyph store (statex_glyphs.gen.cpp) matching
 lib/glyphstore/statex_glyphstore.h.
 
 Env note: needs Pillow, numpy, scipy (all present in the project's Python).
-freetype-py is NOT required — Pillow bundles FreeType. Source fonts are taken
-from the system font directory; override per face in FACES.
+freetype-py is NOT required -- Pillow bundles FreeType. Source fonts are the
+Computer Modern TTFs vendored at tests/oracle/fonts, the same files the
+differential oracle rasterises; nothing is read from the system font directory.
+
+Which glyphs exist is not written down here. The Symbol face and every size
+chain come from tools/genfont/symbols.tsv and MicroTeX's own metric tables --
+see mksymbols.py -- so adding a symbol is a data change, not a code change.
 
 Usage:
     python tools/genfont/genfont.py [--out PATH] [--render 256] [--max-sdf 48]
+                                    [--symbols all|legacy]
 """
 import argparse
+import io
 import os
 import sys
 
 import numpy as np
+import mksymbols
 import tfm
 from PIL import Image, ImageDraw, ImageFont
 from scipy import ndimage
@@ -35,16 +43,30 @@ LATIN_LOWER = list("abcdefghijklmnopqrstuvwxyz")
 LATIN_UPPER = list("ABCDEFGHIJKLMNOPQRSTUVWXYZ")
 DIGITS = list("0123456789")
 OPS = list("+-=()[]<>/.,;:!|")
-SYMBOLS = ["√", "∑", "∫", "⋅", "×", "≤", "≥",
-           "∞", "π", "θ", "ω", "α", "β",
-           "γ", "ϕ",
-           # ASCII `-` and `*` are set from the symbol font in math mode, not
-           # from the text face: TeX's mathcode sends them to family 2. The
-           # text hyphen is 0.332em where the math minus is 0.778em, so using
-           # the wrong one misplaces everything after it. LMM's advances for
-           # these match cmsy10's TFM (0.778015 vs 0.777781, 0.500000 vs
-           # 0.500002), so the Symbol face is the right home for them.
-           "−", "∗"]
+
+# The Symbol face is no longer a hand-kept list. It comes from symbols.tsv,
+# which tools/genfont/mksymbols.py joins out of MicroTeX's own tables, so a
+# symbol's codepoint, source font and slot are all read rather than typed.
+SYMBOLS_TSV = os.path.join(os.path.dirname(os.path.abspath(__file__)),
+                           "symbols.tsv")
+
+# Glyphs the Symbol face needs that are not *named* symbols: the radical is
+# reached through \sqrt, which is structural syntax, so it has no entry in
+# res/sym and would otherwise drop out of the atlas.
+STRUCTURAL = [
+    (0x221A, "cmsy10", 112),
+]
+
+# The Symbol face before symbols.tsv existed. Kept only so `--symbols legacy`
+# can regenerate exactly the old selection and prove the table-driven path
+# changes no glyph; nothing else reads it.
+#
+# ASCII `-` and `*` are set from the symbol font in math mode, not from the
+# text face: TeX's mathcode sends them to family 2. The text hyphen is 0.332em
+# where the math minus is 0.778em, so using the wrong one misplaces everything
+# after it.
+LEGACY_SYMBOL_CPS = [ord(c) for c in
+                     "√∑∫⋅×≤≥∞πθωαβγϕ−∗"]
 
 # face_id -> (name, font path, glyph chars, render-substitution map, TFM font)
 #
@@ -83,7 +105,8 @@ FACES = {
     # mapping names. The Symbol face lists only the symbols the parser has
     # commands for -- it used to carry the whole U+03B1..U+03C9 Greek range,
     # 19 of which were unreachable and existed only as atlas weight.
-    3: ("Symbol", None, SYMBOLS, {}, None),
+    # Filled in from symbols.tsv by main(); see load_symbol_face.
+    3: ("Symbol", None, [], {}, None),
     4: ("Blackboard", None, list("RCNZQ"), {}, None),
 }
 
@@ -114,14 +137,35 @@ FACES = {
 # where Unicode puts the *upright* Greek letters. TeX's math Greek is cmmi10's
 # italic. Exactly the mistake that made Face::Italic wrong once already, one
 # level down.
-TFM_FONT_FILE = {
-    "cmr10": "latin/cmr10.ttf",
-    "cmmi10": "base/cmmi10.ttf",
-    "cmsy10": "maths/cmsy10.ttf",
-    "cmex10": "base/cmex10.ttf",
-    "msbm10": "maths/msbm10.ttf",
-    "cmbx10": "latin/optional/cmbx10.ttf",
-}
+# fontId -> (metrics table name, TTF path), derived rather than transcribed.
+# MicroTeX numbers its fonts *positionally* -- a fontId is the index of
+# REG_FONT(x) in res/reg/builtin_font_reg.cpp -- and each font's DEF_FONT line
+# names its TTF under a "fonts/" subtree that is byte-for-byte the layout of
+# tests/oracle/fonts. So the whole mapping is a lookup plus a prefix swap, and
+# the six-entry table that used to live here is gone.
+#
+# Keyed by metrics table name, not by TTF: cmmi10_unchanged, cmti10_unchanged,
+# r10_unchanged and moustache each share a TTF with another font while carrying
+# a different METRICS block, and collapsing them picks up the wrong widths.
+_FONT_BY_ID = mksymbols.parse_fonts()
+TFM_FONT_FILE = {name: rel for name, rel in _FONT_BY_ID.values()}
+_FONT_NAME_BY_ID = {i: name for i, (name, _) in _FONT_BY_ID.items()}
+
+
+def truetype(path, px):
+    """Open a font with Pillow's BASIC layout engine.
+
+    Not cosmetic. These TTFs are addressed by raw slot -- `chr(slot)` -- and
+    when Pillow is built with RAQM it runs the string through HarfBuzz, which
+    applies Unicode semantics to what is really a font position. cmex10 slot
+    173 is the casualty: chr(173) is U+00AD SOFT HYPHEN, which HarfBuzz drops
+    as an invisible formatting character, so the glyph rasterises blank and
+    with a zero advance. It is one of the size steps for a growing angle
+    bracket. BASIC maps the codepoint through the cmap and draws it.
+    """
+    return ImageFont.truetype(path, px,
+                              layout_engine=ImageFont.Layout.BASIC)
+
 
 _font_cache = {}
 
@@ -136,79 +180,81 @@ def cm_font(name, render_px):
         path = os.path.join(CM, *rel.split("/"))
         if not os.path.exists(path):
             raise SystemExit("vendored font missing: " + path)
-        _font_cache[key] = ImageFont.truetype(path, render_px)
+        _font_cache[key] = truetype(path, render_px)
     return _font_cache[key]
 
 
 # Must match kFirstPieceVariant in lib/glyphstore/statex_glyphstore.h.
-PIECE_TOP, PIECE_REPEAT, PIECE_BOTTOM = 8, 9, 10
+# A middle piece is rare but real: cmex10 slots 56 and 57, the big braces, have
+# one, so the recipe is not always just top/repeat/bottom.
+PIECE_TOP, PIECE_MIDDLE, PIECE_REPEAT, PIECE_BOTTOM = 8, 11, 9, 10
 
-VARIANTS = {
-    # Display-size big operators. `\sum` and `\int` in display style.
-    (3, "∑", 1): ("base/cmex10.ttf", "cmex10", 88),
-    (3, "∫", 1): ("base/cmex10.ttf", "cmex10", 90),
-    # Radicals. TeX's chain is cmsy10 112 (the base surd, variant 0 below)
-    # then cmex10 112 -> 113 -> 114 -> 115, each ~0.6em deeper than the last:
-    # totals 1.20, 1.80, 2.40, 3.00 em against the base's 1.00.
-    # (cmex10 116 is the repeatable piece of the extensible recipe, which needs
-    # assembly rather than a plain record, so it is not a chain entry.)
-    (3, "√", 1): ("base/cmex10.ttf", "cmex10", 112),
-    (3, "√", 2): ("base/cmex10.ttf", "cmex10", 113),
-    (3, "√", 3): ("base/cmex10.ttf", "cmex10", 114),
-    (3, "√", 4): ("base/cmex10.ttf", "cmex10", 115),
-    # Growing delimiters. Base is the text glyph in cmr10 (variant 0, emitted
-    # by the FACES loop); the chain then runs through cmex10. Totals are 1.20,
-    # 1.80 and 2.40 em against the text bracket's ~0.75.
-    #   [  cmr10 91 -> cmex10 163 -> 104 -> 183
-    #   ]  cmr10 93 -> cmex10 164 -> 105 -> 184
-    #   (  cmr10 40 -> cmex10 161 -> 179 -> 181
-    #   )  cmr10 41 -> cmex10 162 -> 180 -> 182
-    # Each chain continues past this in cmex10, but the next step is the
-    # extensible recipe rather than a single glyph, so it stops here.
-    (0, "[", 1): ("base/cmex10.ttf", "cmex10", 163),
-    (0, "[", 2): ("base/cmex10.ttf", "cmex10", 104),
-    (0, "[", 3): ("base/cmex10.ttf", "cmex10", 183),
-    (0, "]", 1): ("base/cmex10.ttf", "cmex10", 164),
-    (0, "]", 2): ("base/cmex10.ttf", "cmex10", 105),
-    (0, "]", 3): ("base/cmex10.ttf", "cmex10", 184),
-    (0, "(", 1): ("base/cmex10.ttf", "cmex10", 161),
-    (0, "(", 2): ("base/cmex10.ttf", "cmex10", 179),
-    (0, "(", 3): ("base/cmex10.ttf", "cmex10", 181),
-    (0, ")", 1): ("base/cmex10.ttf", "cmex10", 162),
-    (0, ")", 2): ("base/cmex10.ttf", "cmex10", 180),
-    (0, ")", 3): ("base/cmex10.ttf", "cmex10", 182),
-    # The last single glyph before each chain reaches its recipe, 3.00 em.
-    # Leaving these out made `matrix_3x1` assemble a delimiter from pieces
-    # where TeX just picks a taller bracket.
-    (0, "[", 4): ("base/cmex10.ttf", "cmex10", 34),
-    (0, "]", 4): ("base/cmex10.ttf", "cmex10", 35),
-    (0, "(", 4): ("base/cmex10.ttf", "cmex10", 195),
-    (0, ")", 4): ("base/cmex10.ttf", "cmex10", 33),
+def _chain(font, slot):
+    """Walk one glyph's LARGERS chain, then its extensible recipe.
 
-    # Extensible pieces. Past the last single glyph TeX stops choosing and
-    # starts BUILDING: each font's EXTENSIONS block gives
-    # `slot, top, mid, repeat, bottom`, and the delimiter is assembled by
-    # stacking the top, as many repeats as it takes, and the bottom.
-    #
-    #   [  50, 50, -1, 54, 52      ]  51, 51, -1, 55, 53
-    #   (  48, 48, -1, 66, 64      )  49, 49, -1, 67, 65
-    #
-    # These live at variant numbers >= kFirstPieceVariant so the "smallest that
-    # fits" walk never mistakes a 0.6 em repeat tile for a size step. None of
-    # these four has a middle piece, so only three of the slots are used.
-    (0, "[", PIECE_TOP): ("base/cmex10.ttf", "cmex10", 50),
-    (0, "[", PIECE_REPEAT): ("base/cmex10.ttf", "cmex10", 54),
-    (0, "[", PIECE_BOTTOM): ("base/cmex10.ttf", "cmex10", 52),
-    (0, "]", PIECE_TOP): ("base/cmex10.ttf", "cmex10", 51),
-    (0, "]", PIECE_REPEAT): ("base/cmex10.ttf", "cmex10", 55),
-    (0, "]", PIECE_BOTTOM): ("base/cmex10.ttf", "cmex10", 53),
-    (0, "(", PIECE_TOP): ("base/cmex10.ttf", "cmex10", 48),
-    (0, "(", PIECE_REPEAT): ("base/cmex10.ttf", "cmex10", 66),
-    (0, "(", PIECE_BOTTOM): ("base/cmex10.ttf", "cmex10", 64),
-    (0, ")", PIECE_TOP): ("base/cmex10.ttf", "cmex10", 49),
-    (0, ")", PIECE_REPEAT): ("base/cmex10.ttf", "cmex10", 67),
-    (0, ")", PIECE_BOTTOM): ("base/cmex10.ttf", "cmex10", 65),
-}
+    TeX does not enlarge a symbol by scaling it: Computer Modern ships
+    purpose-cut glyphs at each size and LARGERS links them. Past the last cut
+    TeX stops choosing and starts BUILDING, stacking the pieces an EXTENSIONS
+    row names.
+
+    The join between the two is the subtle part. A chain's final link points at
+    the slot that *owns* the extensible recipe, so following it would add the
+    recipe's anchor as one more size step -- and since a repeat tile is about
+    0.6 em, the "smallest that fits" walk would then prefer it to the 2.4 em
+    bracket it exists to extend. Terminating the walk at a slot with an
+    EXTENSIONS entry is what stops that, and it reproduces exactly where the
+    hand-written table used to stop.
+
+    Returns {variant: (metrics table name, slot)}.
+    """
+    out = {}
+    variant, seen = 1, set()
+    f, sl = font, slot
+    while True:
+        lg = tfm.largers(f).get(sl)
+        if lg is None or (f, sl) in seen:
+            break
+        seen.add((f, sl))
+        nxt = _FONT_NAME_BY_ID.get(lg.font_id)
+        if nxt is None:
+            break
+        if tfm.extensions(nxt).get(lg.slot) is not None:
+            f, sl = nxt, lg.slot
+            break
+        if variant >= PIECE_TOP:
+            raise SystemExit(
+                "%s slot %d: size chain reached variant %d, which collides "
+                "with the extensible piece range starting at %d"
+                % (font, slot, variant, PIECE_TOP))
+        out[variant] = (nxt, lg.slot)
+        f, sl, variant = nxt, lg.slot, variant + 1
+
+    ext = tfm.extensions(f).get(sl)
+    if ext is not None:
+        for label, piece in ((PIECE_TOP, ext.top), (PIECE_MIDDLE, ext.middle),
+                             (PIECE_REPEAT, ext.repeat),
+                             (PIECE_BOTTOM, ext.bottom)):
+            if piece >= 0:
+                out[label] = (f, piece)
+    return out
+
+
+def build_variants(base):
+    """(face, codepoint) -> (tfm font, slot)  =>  variant records to emit.
+
+    (face, codepoint, variant) -> (ttf relative to CM, tfm font name, slot)
+    """
+    out = {}
+    for (face_id, cp), (font, slot) in sorted(base.items()):
+        for variant, (vfont, vslot) in _chain(font, slot).items():
+            rel = TFM_FONT_FILE.get(vfont)
+            if rel is None:
+                raise SystemExit(
+                    "variant of U+%04X needs font %r, which has no vendored "
+                    "TTF" % (cp, vfont))
+            out[(face_id, cp, variant)] = (rel, vfont, vslot)
+    return out
+
 
 
 # Characters whose math glyph is NOT at their ASCII slot in the face's own TFM.
@@ -220,39 +266,56 @@ TFM_SLOT = {
     (0, "<"): ("cmmi10", 60),   # cmr10 slot 60 is an inverted exclamation
     (0, ">"): ("cmmi10", 62),
     (0, "|"): ("cmsy10", 106),  # cmr10 slot 124 is a double quote
-    # Symbol-face glyphs are rasterised from Latin Modern Math but must carry
-    # Computer Modern's metrics, because that is what MicroTeX lays out with.
-    # The base surd in particular is positioned from its own depth.
-    (3, "√"): ("cmsy10", 112),
-    # Greek is math italic, i.e. cmmi10 -- not the symbol font. MicroTeX's
-    # cmmi10 table is indexed 33..195, which is why omega lands on slot 33
-    # rather than at the end of a contiguous Greek run.
-    (3, "α"): ("cmmi10", 174),
-    (3, "β"): ("cmmi10", 175),
-    (3, "γ"): ("cmmi10", 176),
-    (3, "θ"): ("cmmi10", 181),
-    (3, "π"): ("cmmi10", 188),
-    (3, "ω"): ("cmmi10", 33),
-    (3, "ϕ"): ("cmmi10", 193),
-    # Relations and operators, all cmsy10.
-    (3, "∞"): ("cmsy10", 49),
-    (3, "≤"): ("cmsy10", 183),
-    (3, "≥"): ("cmsy10", 184),
-    (3, "⋅"): ("cmsy10", 162),
-    (3, "×"): ("cmsy10", 163),
-    (3, "−"): ("cmsy10", 161),
-    (3, "∗"): ("cmsy10", 164),
-    # The TEXT-size big operators; the display cuts are variant 1 in VARIANTS.
-    # cmex10's LARGERS maps 80 -> 88 and 82 -> 90.
-    (3, "∑"): ("cmex10", 80),
-    (3, "∫"): ("cmex10", 82),
-    # Blackboard bold is msbm10, at each letter's own ASCII slot.
+    # Blackboard bold is msbm10, at each letter's own ASCII slot. \mathbb is a
+    # style rather than a set of named symbols, so this one stays written down.
     (4, "R"): ("msbm10", 82),
     (4, "C"): ("msbm10", 67),
     (4, "N"): ("msbm10", 78),
     (4, "Z"): ("msbm10", 90),
     (4, "Q"): ("msbm10", 81),
 }
+
+
+def load_symbol_face(subset):
+    """The Symbol face, read from symbols.tsv.
+
+    Returns (chars, {(3, char): (tfm font, slot)}). The nineteen entries this
+    replaces were correct, but each was a slot number typed by hand from a
+    table that was already in the repo.
+    """
+    if not os.path.exists(SYMBOLS_TSV):
+        raise SystemExit(
+            "%s is missing -- run tools/genfont/mksymbols.py to build it"
+            % SYMBOLS_TSV)
+    entries = []
+    with io.open(SYMBOLS_TSV, encoding="utf-8") as fh:
+        for line in fh:
+            if line.startswith("#") or line.startswith("name\t"):
+                continue
+            f = line.rstrip("\n").split("\t")
+            if len(f) < 10:
+                continue
+            entries.append((int(f[1], 16), f[7], int(f[8])))
+    entries.extend(STRUCTURAL)
+
+    if subset == "legacy":
+        keep = set(LEGACY_SYMBOL_CPS)
+        entries = [e for e in entries if e[0] in keep]
+        missing = keep - {cp for cp, _, _ in entries}
+        if missing:
+            raise SystemExit("legacy subset missing: %s"
+                             % ", ".join("U+%04X" % c for c in sorted(missing)))
+
+    chars, slots, seen = [], {}, set()
+    for cp, font, slot in entries:
+        if cp in seen:
+            continue
+        seen.add(cp)
+        ch = chr(cp)
+        chars.append(ch)
+        slots[(3, ch)] = (font, slot)
+    return chars, slots
+
 
 # Above this, TFM and raster describe different GLYPHS -- i.e. the slot mapping
 # is wrong. Below it they describe the same character in two fonts that merely
@@ -380,9 +443,34 @@ def main():
     # contour. Large enough that stroke interiors saturate (full coverage) yet
     # leave precision for the ~1px antialiasing band near the edge.
     ap.add_argument("--spread-em", type=float, default=0.125)
+    ap.add_argument("--symbols", choices=("all", "legacy"), default="all",
+                    help="'all' takes the Symbol face from symbols.tsv; "
+                         "'legacy' restricts it to the set that predated that "
+                         "file, so the table-driven path can be proved to "
+                         "change no glyph")
     args = ap.parse_args()
 
     spread_em = args.spread_em
+
+    # The Symbol face and every size chain are read, not written down.
+    sym_chars, sym_slots = load_symbol_face(args.symbols)
+    name, path, _, rmap, tfm_font = FACES[3]
+    FACES[3] = (name, path, sym_chars, rmap, tfm_font)
+    TFM_SLOT.update(sym_slots)
+
+    # Base slots for every glyph the atlas will hold, so a size chain can be
+    # looked for behind each of them. Faces 0-2 address their letters at the
+    # ASCII slot of the character itself; everything else is redirected.
+    base_slots = {}
+    for face_id in sorted(FACES):
+        _, _, glyphs, _, face_font = FACES[face_id]
+        for ch in glyphs:
+            hit = TFM_SLOT.get((face_id, ch))
+            if hit is not None:
+                base_slots[(face_id, ord(ch))] = hit
+            elif face_font is not None and ord(ch) < 128:
+                base_slots[(face_id, ord(ch))] = (face_font, ord(ch))
+    variants = build_variants(base_slots)
 
     tfm_used = [0]
     from_cm = [0]
@@ -398,7 +486,7 @@ def main():
         # passed. It is a hard error now.
         if path is not None and not os.path.exists(path):
             raise SystemExit(f"face {name}: font not found: {path}")
-        font = ImageFont.truetype(path, args.render) if path is not None else None
+        font = truetype(path, args.render) if path is not None else None
         seen = set()
         for ch in glyphs:
             cp = ord(ch)
@@ -468,12 +556,13 @@ def main():
 
     # --- size variants -----------------------------------------------------
     # Shape from the raster, metrics from the TFM. See VARIANTS above.
-    for (face_id, ch, variant), (rel, tfm_font, slot) in sorted(
-            VARIANTS.items(), key=lambda kv: (kv[0][0], ord(kv[0][1]), kv[0][2])):
+    for (face_id, cp_v, variant), (rel, tfm_font, slot) in sorted(
+            variants.items()):
+        ch = chr(cp_v)
         path = os.path.join(CM, *rel.split("/"))
         if not os.path.exists(path):
             raise SystemExit(f"variant source font missing: {path}")
-        font = ImageFont.truetype(path, args.render)
+        font = truetype(path, args.render)
         sdf, m = make_sdf(font, chr(slot), args.render, args.pad,
                           args.max_sdf, spread_em)
         if sdf is None or m["box"] is None:

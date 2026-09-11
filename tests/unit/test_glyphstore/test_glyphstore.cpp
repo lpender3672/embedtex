@@ -104,8 +104,17 @@ static void test_exact_variant_lookup_returns_that_variant() {
     TEST_ASSERT_EQUAL_UINT(v, g->variant);
   }
   // Past the end of the chain there is no record, and the caller must be told
-  // rather than handed the nearest thing.
-  TEST_ASSERT_NULL(findGlyphVariant(Face::Symbol, 0x221A, 9));
+  // rather than handed the nearest thing. The size chain is 0..4, so 5 is the
+  // first value past it -- NOT some larger number, because the variant space
+  // is partitioned and everything at kFirstPieceVariant and above is an
+  // extensible piece rather than a size step.
+  TEST_ASSERT_NULL(findGlyphVariant(Face::Symbol, 0x221A, 5));
+  // cmex10 does give the radical an extensible recipe (slots 118/117/116), so
+  // the piece slots are populated. They must stay invisible to the size walk:
+  // a 0.6 em repeat tile chosen in place of a 3 em radical would be a
+  // spectacular layout bug.
+  TEST_ASSERT_NOT_NULL(findGlyphVariant(Face::Symbol, 0x221A, kPieceRepeat));
+  TEST_ASSERT_TRUE(kPieceRepeat >= kFirstPieceVariant);
   // A glyph with no chain has variant 0 and nothing else.
   TEST_ASSERT_NOT_NULL(findGlyphVariant(Face::Italic, 'x', 0));
   TEST_ASSERT_NULL(findGlyphVariant(Face::Italic, 'x', 1));
