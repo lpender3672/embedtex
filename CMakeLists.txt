@@ -70,6 +70,17 @@ target_link_libraries(statex PRIVATE statex_warnings statex_safety)
 # they ask for it; the tests deliberately build with exceptions so they can
 # host the oracle.
 
+# ---------------------------------------------------------------------------
+# Backends: Graphics2D implementations. statex_a8 knows lib/StaTeX and a byte
+# grid, and nothing else -- no LVGL, no hardware -- so the host suites can hold
+# it to the same output as the image path.
+# ---------------------------------------------------------------------------
+add_library(statex_a8 STATIC
+  "${CMAKE_CURRENT_SOURCE_DIR}/backends/statex_a8/statex_a8.cpp")
+target_include_directories(statex_a8 PUBLIC
+  "${CMAKE_CURRENT_SOURCE_DIR}/backends/statex_a8")
+target_link_libraries(statex_a8 PUBLIC statex PRIVATE statex_warnings statex_safety)
+
 if(STATEX_BUILD_TESTS)
   enable_testing()
   add_subdirectory(tests)

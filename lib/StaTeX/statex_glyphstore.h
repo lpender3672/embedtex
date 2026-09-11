@@ -66,6 +66,37 @@ inline constexpr float emUnits(i16 v, float emPx) {
   return static_cast<float>(v) / 256.0f * emPx;
 }
 
+/** Device-pixel size of a glyph's coverage bitmap. */
+struct GlyphBox {
+  int w;
+  int h;
+};
+
+/**
+ * The size the sampler will produce for this glyph at `emPx`, without
+ * sampling anything.
+ *
+ * Three callers need this and must agree exactly: the sampler itself, layout's
+ * pre-flight budget check (an oversized glyph must be refused before the draw
+ * walk has put anything on the panel), and any font backend that has to report
+ * a bitmap box before rendering -- which is how every glyph engine works, from
+ * FreeType's FT_Load_Glyph to stb_truetype's GetGlyphBitmapBox. It lives here
+ * for the same reason emUnits does: it is a property of the record's storage
+ * format, and a formula restated in three places is one that will one day be
+ * changed in two.
+ *
+ * The arithmetic is in float on purpose. `boxW * emPx / 256` in integers
+ * truncates before the rounding term can apply, which cost every glyph up to a
+ * pixel of width and height, worst at the small sizes scripts live at. This
+ * runs once per glyph, never per pixel.
+ */
+inline GlyphBox glyphCoverageSize(const GlyphRecord& g, float emPx) {
+  const float scale = emPx / 256.0f;
+  return GlyphBox{
+      static_cast<int>(static_cast<float>(g.boxW) * scale + 0.5f),
+      static_cast<int>(static_cast<float>(g.boxH) * scale + 0.5f)};
+}
+
 /**
  * Variants at or above this are not size steps: they are the pieces of an
  * extensible recipe (top, repeat, bottom), which TeX stacks to build a

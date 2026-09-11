@@ -1,5 +1,7 @@
 // Phase 7 — integration + safety properties.
 // STX-MEM-03/05, STX-API-01/02, STX-ERR-03.
+#include <initializer_list>
+
 #include <unity.h>
 #include <statex_render.h>
 #include <stx_record.h>
@@ -169,6 +171,79 @@ static void test_showcase_matrix_renders() {
   TEST_ASSERT_LESS_THAN_UINT((u32)sizeof(g_scratch), st.highWater);
 }
 
+// --- measure(): extents without rasterising -------------------------------
+//
+// The contract that matters is that measure() reports exactly what render()
+// will lay out. If it drifted, a scrolling list would size its rows from one
+// layout and draw another.
+
+static void test_measure_agrees_with_render() {
+  Renderer r(g_scratch, sizeof(g_scratch));
+  for (float em : {12.0f, 20.0f, 48.0f}) {
+    Renderer rm(g_scratch, sizeof(g_scratch));
+    RenderStats ms{};
+    TEST_ASSERT_EQUAL_INT((int)ParseError::Ok,
+                          (int)rm.measure(kGolden, slen(kGolden), em, &ms));
+    Renderer rr(g_scratch, sizeof(g_scratch));
+    RecordingGraphics<512> rec;
+    RenderStats rs{};
+    TEST_ASSERT_EQUAL_INT((int)ParseError::Ok,
+                          (int)rr.render(kGolden, slen(kGolden), em, 0, 100, rec, &rs));
+    TEST_ASSERT_FLOAT_WITHIN(0.0f, rs.width, ms.width);
+    TEST_ASSERT_FLOAT_WITHIN(0.0f, rs.height, ms.height);
+    TEST_ASSERT_FLOAT_WITHIN(0.0f, rs.depth, ms.depth);
+  }
+}
+
+// measure() must never reach the draw phase, so its arena peak is strictly
+// below a render's: no coverage buffer, no draw work-stack. Fresh Renderers,
+// because Arena::reset() preserves the high-water mark across calls.
+static void test_measure_costs_less_memory_than_render() {
+  RenderStats ms{}, rs{};
+  {
+    Renderer rm(g_scratch, sizeof(g_scratch));
+    TEST_ASSERT_EQUAL_INT((int)ParseError::Ok,
+                          (int)rm.measure(kGolden, slen(kGolden), SIZE, &ms));
+  }
+  {
+    Renderer rr(g_scratch, sizeof(g_scratch));
+    RecordingGraphics<512> rec;
+    TEST_ASSERT_EQUAL_INT((int)ParseError::Ok,
+                          (int)rr.render(kGolden, slen(kGolden), SIZE, 0, 100, rec, &rs));
+  }
+  TEST_ASSERT_LESS_THAN_UINT(rs.highWater, ms.highWater);
+}
+
+// Refusals must agree too: a caller that measures to decide whether to show an
+// entry would otherwise accept something the draw walk then rejects.
+static void test_measure_refuses_what_render_refuses() {
+  Renderer r(g_scratch, sizeof(g_scratch));
+  RenderStats st{};
+  const c32 bad[] = U"\\notacommand{x}";
+  TEST_ASSERT_EQUAL_INT((int)ParseError::UnknownCommand,
+                        (int)r.measure(bad, slen(bad), SIZE, &st));
+  const c32 unbal[] = U"{x";
+  TEST_ASSERT_EQUAL_INT((int)ParseError::UnbalancedBrace,
+                        (int)r.measure(unbal, slen(unbal), SIZE, &st));
+}
+
+// measure() leaves no residue, exactly as render() does not (STX-API-02).
+static void test_measure_is_reentrant() {
+  Renderer r(g_scratch, sizeof(g_scratch));
+  const c32 src[] = U"\\sqrt{\\alpha^2}";
+  RenderStats a{}, b{};
+  TEST_ASSERT_EQUAL_INT((int)ParseError::Ok,
+                        (int)r.measure(src, slen(src), SIZE, &a));
+  const c32 other[] = U"\\frac{1}{2}";
+  RenderStats junk{};
+  r.measure(other, slen(other), SIZE, &junk);
+  TEST_ASSERT_EQUAL_INT((int)ParseError::Ok,
+                        (int)r.measure(src, slen(src), SIZE, &b));
+  TEST_ASSERT_FLOAT_WITHIN(0.0f, a.width, b.width);
+  TEST_ASSERT_FLOAT_WITHIN(0.0f, a.height, b.height);
+  TEST_ASSERT_FLOAT_WITHIN(0.0f, a.depth, b.depth);
+}
+
 int main(int, char**) {
   UNITY_BEGIN();
   RUN_TEST(test_showcase_matrix_renders);
@@ -182,5 +257,9 @@ int main(int, char**) {
   RUN_TEST(test_exhaustion_then_reuse);
   RUN_TEST(test_unknown_command_refused);
   RUN_TEST(test_matrix_renders_end_to_end);
+  RUN_TEST(test_measure_agrees_with_render);
+  RUN_TEST(test_measure_costs_less_memory_than_render);
+  RUN_TEST(test_measure_refuses_what_render_refuses);
+  RUN_TEST(test_measure_is_reentrant);
   return UNITY_END();
 }

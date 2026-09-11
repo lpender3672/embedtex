@@ -23,16 +23,12 @@ constexpr i32 kMaxSlopeQ16 = 65536;
 
 bool renderGlyphCoverage(const GlyphRecord& g, const u8* sdfBase, int spread256,
                          int emPx, u8* out, int cap, GlyphCoverage* cov) {
-  // Output box size in device pixels = SDF box (em) * emPx.
-  //
-  // The division is in floating point on purpose: `g.boxW * emPx / 256` in
-  // integers truncates before the rounding term can apply, which cost every
-  // glyph up to a pixel of width and height, worst at the small sizes scripts
-  // live at. This is once per glyph, not once per pixel, so it is not on the
-  // path the rest of this function is written around.
-  const float emScale = static_cast<float>(emPx) / 256.0f;
-  const int w = static_cast<int>(static_cast<float>(g.boxW) * emScale + 0.5f);
-  const int h = static_cast<int>(static_cast<float>(g.boxH) * emScale + 0.5f);
+  // Output box size in device pixels. Shared with layout's pre-flight check
+  // and with any font backend that must report a bitmap box before rendering,
+  // so it lives on the record rather than here (statex_glyphstore.h).
+  const GlyphBox box = glyphCoverageSize(g, static_cast<float>(emPx));
+  const int w = box.w;
+  const int h = box.h;
   cov->w = w;
   cov->h = h;
   if (w <= 0 || h <= 0) return true;  // nothing to draw

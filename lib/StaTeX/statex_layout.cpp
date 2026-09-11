@@ -14,16 +14,15 @@ constexpr c32 RADICAL_GLYPH = 0x221A;  // √
 /**
  * Would this glyph's coverage bitmap fit the draw phase's budget at `emPx`?
  *
- * Mirrors the size arithmetic in statex_sdf.cpp exactly. Checking here means
- * an oversized glyph is refused during layout, before the draw walk has put
- * anything on the panel.
+ * Checking here means an oversized glyph is refused during layout, before the
+ * draw walk has put anything on the panel. The size arithmetic itself is
+ * `glyphCoverageSize` (statex_glyphstore.h) so this cannot drift from what the
+ * sampler will actually produce -- it used to be a hand-copied duplicate of it.
  */
 inline bool glyphFitsCoverage(const GlyphRecord& g, float emPx) {
-  const float scale = emPx / 256.0f;
-  const int w = static_cast<int>(static_cast<float>(g.boxW) * scale + 0.5f);
-  const int h = static_cast<int>(static_cast<float>(g.boxH) * scale + 0.5f);
-  if (w <= 0 || h <= 0) return true;  // nothing to draw
-  return w * h <= kMaxGlyphCoveragePx;
+  const GlyphBox box = glyphCoverageSize(g, emPx);
+  if (box.w <= 0 || box.h <= 0) return true;  // nothing to draw
+  return box.w * box.h <= kMaxGlyphCoveragePx;
 }
 
 constexpr int kRowTmp = 256;

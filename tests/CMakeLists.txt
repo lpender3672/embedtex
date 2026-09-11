@@ -93,6 +93,7 @@ stx_add_suite(test_draw_atomicity  behaviour/test_draw_atomicity.cpp  LABELS "gr
 stx_add_suite(test_node_bounds     behaviour/test_node_bounds.cpp     LABELS "green;behaviour")
 stx_add_suite(test_atom_spacing    behaviour/test_atom_spacing.cpp    LABELS "green;behaviour")
 stx_add_suite(test_radical         behaviour/test_radical.cpp         LABELS "green;behaviour")
+stx_add_suite(test_a8_backend      behaviour/test_a8_backend.cpp      LABELS "green;behaviour" LIBS statex_a8)
 
 # --- tests/defects: one suite per open defect ------------------------------
 # EMPTY. Every defect suite written for this effort has been fixed and moved to

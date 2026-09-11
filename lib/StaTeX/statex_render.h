@@ -2,6 +2,7 @@
 #define STATEX_RENDER_H
 
 #include "statex_arena.h"
+#include "statex_box.h"
 #include "statex_draw.h"
 #include "statex_graphics.h"
 #include "statex_parser.h"
@@ -54,9 +55,40 @@ class Renderer {
                     RenderStats* stats = nullptr,
                     GlyphProbe* probe = nullptr);
 
+  /**
+   * Extents only: parse and lay out, then stop. Nothing is drawn and no
+   * Graphics2D is required.
+   *
+   * This is not the same as rendering into a Graphics2D that discards its
+   * input. The draw walk calls the SDF sampler *before* it calls
+   * blendCoverage, so a null backend still pays for every glyph rasterised;
+   * measuring that way costs the same as drawing. Stopping after layout costs
+   * roughly 6% of a render, because the sampler is ~94% of it.
+   *
+   * That matters wherever sizes are needed for many items and pixels for few:
+   * a scrolling list must know every entry's height to lay out its scroll
+   * range, and a font backend must report a glyph's metrics during text layout
+   * without rasterising it (the same split as FreeType's FT_Load_Glyph vs
+   * FT_Render_Glyph).
+   *
+   * `stats->highWater` carries the arena's cumulative high-water mark, which
+   * Arena::reset() preserves by design -- so it is the layout peak only on a
+   * Renderer that has never drawn.
+   *
+   * A formula that measures Ok can still refuse when drawn -- the draw walk
+   * has its own bounds -- so callers that must not fail late should treat this
+   * as necessary, not sufficient.
+   */
+  ParseError measure(const c32* src, int len, float sizePx,
+                     RenderStats* stats);
+
   u32 highWater() const { return _arena.highWater(); }
 
  private:
+  /** Shared prefix of render() and measure(): parse and lay out into `boxes`. */
+  ParseError buildLayout(const c32* src, int len, float sizePx,
+                         BoxStore& boxes, Handle* rootBox);
+
   Arena _arena;
   RenderCaps _caps;
 };
