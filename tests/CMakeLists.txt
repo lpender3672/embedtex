@@ -95,6 +95,12 @@ stx_add_suite(test_atom_spacing    behaviour/test_atom_spacing.cpp    LABELS "gr
 stx_add_suite(test_radical         behaviour/test_radical.cpp         LABELS "green;behaviour")
 stx_add_suite(test_a8_backend      behaviour/test_a8_backend.cpp      LABELS "green;behaviour" LIBS statex_a8)
 
+# Its own entry on purpose. The corpus covers the fourteen symbol names that
+# were the whole command set when it was written; this sweeps all six hundred,
+# and folding it into the oracle suite would bury it under a red result that
+# is red for unrelated layout reasons.
+stx_add_suite(test_symbol_sweep    behaviour/test_symbol_sweep.cpp    LABELS "green;behaviour")
+
 # --- tests/defects: one suite per open defect ------------------------------
 # EMPTY. Every defect suite written for this effort has been fixed and moved to
 # tests/behaviour/ with its assertions unchanged. The directory stays because
