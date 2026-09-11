@@ -206,6 +206,24 @@ OVERRIDE = {
     "ast": 0x2217,
 }
 
+# Names whose source font cannot draw them, with the evidence.
+#
+# The vendored TTFs are addressed by raw slot -- their cmap maps slot n to
+# codepoint n -- and that holds for every Computer Modern face. special.ttf
+# does not honour it: it carries eight distinct glyphs, maps 216 of its 256
+# slots to a single .notdef, and aliases slots 101 and 109 to one glyph. The
+# shared glyph's ink has no descender (0.01 em measured), which matches
+# texteuro's declared metrics (h 0.68, d 0.013) and not textmu's (h 0.45,
+# d 0.20) -- so it is the euro sign, and \textmu was drawing it.
+#
+# Found by looking at a contact sheet, not by any assertion: the glyph is not
+# blank, its advance matches its TFM to 0.05 em, and it resolves through every
+# table correctly. genfont now refuses two used slots of one font that
+# rasterise identically with different metrics, so this cannot recur silently.
+BROKEN = {
+    "textmu": "special.ttf aliases slot 109 to slot 101, so it draws a euro",
+}
+
 PINNED = {
     "alpha": 0x03B1, "beta": 0x03B2, "cdot": 0x22C5, "gamma": 0x03B3,
     "geq": 0x2265, "infty": 0x221E, "int": 0x222B, "leq": 0x2264,
@@ -244,6 +262,9 @@ def main() -> int:
             continue
         if at[0] == "acc":
             dropped["accent (no accent layout yet)"] += 1
+            continue
+        if name in BROKEN:
+            dropped["source font cannot draw it"] += 1
             continue
         if at[0] not in ATOM:
             dropped["unmapped AtomType %s" % at[0]] += 1

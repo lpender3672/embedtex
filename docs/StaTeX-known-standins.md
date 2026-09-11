@@ -105,6 +105,28 @@ caught them.
 They are excluded until `\left` / `\right` exists, because a stretchy
 delimiter is the only context they appear in anyway.
 
+### `\textmu` is excluded: special.ttf cannot draw it
+
+Every vendored Computer Modern face maps slot *n* to codepoint *n*, which is
+what makes `chr(slot)` a valid way to ask for a glyph. `special.ttf` does not:
+it holds **eight** distinct glyphs, maps 216 of its 256 slots to a single
+`.notdef`, and aliases slots 101 and 109 to one glyph.
+
+So `\textmu` drew a euro sign. It got through every existing check — the glyph
+is not blank, it resolves through all four tables, and its advance matches its
+TFM to 0.05 em, well inside the 0.20 em slot check. It was found by putting 600
+glyphs on a contact sheet and looking at them.
+
+genfont now refuses two *used* slots of one font that rasterise identically
+while declaring different metrics, which is the precise signature. Different
+fonts are exempt and must be: a period in cmmi10 and a centre dot in cmsy10 are
+both small discs and downsample to the same field, correctly, with their
+metrics placing them at different heights.
+
+**The lesson is the one already written above** — check the picture, not just
+the score. The contact sheets are written to the artifacts directory on every
+run of `test_symbol_sweep` for exactly this reason.
+
 ### 147 symbols use private-use codepoints
 
 StaTeX keys glyphs by `(Face, codepoint)`. MicroTeX's tables name a real

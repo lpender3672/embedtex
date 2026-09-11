@@ -597,7 +597,11 @@ def main():
                 advance=adv, bearingX=m["bearingX"],
                 height=hgt, depth=dep, italic=ital,
                 boxX=m["box"]["x"], boxY=m["box"]["y"],
-                boxW=m["box"]["w"], boxH=m["box"]["h"]))
+                boxW=m["box"]["w"], boxH=m["box"]["h"],
+                # Not emitted: the cmap-aliasing self-check below needs to know
+                # which (font, slot) each picture came from.
+                src=(found[1], found[2]) if found is not None else None,
+                sdf=sdf.tobytes()))
 
     # --- size variants -----------------------------------------------------
     # Shape from the raster, metrics from the TFM. See VARIANTS above.
@@ -622,7 +626,8 @@ def main():
             advance=t.width, bearingX=m["bearingX"],
             height=t.height, depth=t.depth, italic=t.italic,
             boxX=m["box"]["x"], boxY=m["box"]["y"],
-            boxW=m["box"]["w"], boxH=m["box"]["h"]))
+            boxW=m["box"]["w"], boxH=m["box"]["h"],
+            src=(tfm_font, slot), sdf=sdf.tobytes()))
         print(f"  variant U+{ord(ch):04X} v{variant} <- {rel} slot {slot}  "
               f"tfm w={t.width:.4f} h={t.height:.4f} d={t.depth:.4f} it={t.italic:.4f}")
 
@@ -773,6 +778,42 @@ const GlyphRecord* findLargestGlyphVariant(Face face, c32 cp) {
         "%d of %d glyphs have a zero advance; overlays are a handful, so this "
         "is a metric lookup failing silently" % (zero_advance, len(records)))
     print(f"  zero-advance overlays: {zero_advance}")
+
+    # Two slots of the SAME font that rasterise identically but declare
+    # different metrics mean the font's cmap does not honour slot == codepoint,
+    # so one of them is drawing the other's glyph.
+    #
+    # This is not hypothetical and nothing else catches it. special.ttf aliases
+    # slots 101 and 109, and \textmu drew a euro sign for a whole regeneration:
+    # the glyph is not blank, it resolves through every table, and its advance
+    # matches its TFM to 0.05 em, well inside the 0.20 em slot check. It was
+    # found by looking at a contact sheet.
+    #
+    # Different fonts are exempt -- a period in cmmi10 and a centre dot in
+    # cmsy10 are both small discs and downsample to the same field, correctly,
+    # with the metrics placing them at different heights.
+    by_shape = {}
+    aliased = []
+    for r in records:
+        src = r.get("src")
+        if src is None:
+            continue
+        key = (src[0], bytes(r["sdf"]))
+        prev = by_shape.get(key)
+        here = (r["advance"], r["height"], r["depth"])
+        if prev is not None and prev[1] != here:
+            aliased.append((src[0], prev[0], src[1], r["cp"]))
+        else:
+            by_shape.setdefault(key, (src[1], here))
+    if aliased:
+        lines = "\n".join(
+            "  %s slots %d and %d draw the same glyph but declare different "
+            "metrics (U+%04X)" % (f, a, b, cp) for f, a, b, cp in aliased)
+        raise SystemExit(
+            "a source font's cmap does not honour slot == codepoint:\n" + lines +
+            "\nOne of each pair is drawing the other's picture. Exclude it in "
+            "tools/genfont/mksymbols.py with the evidence.")
+
     print("  self-checks OK")
 
 

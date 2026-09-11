@@ -524,7 +524,6 @@ const SymbolEntry kSymbols[] STATEX_FLASH = {
     {"texteuro", 0xE068, AtomType::Ordinary, false},
     {"textfractionsolidus", 0x002F, AtomType::Ordinary, false},
     {"textminus", 0x2010, AtomType::Ordinary, false},
-    {"textmu", 0x00B5, AtomType::Ordinary, false},
     {"textnormaldot", 0x002E, AtomType::Punctuation, false},
     {"textpercent", 0xE069, AtomType::Ordinary, false},
     {"textpertenthousand", 0x2031, AtomType::Ordinary, false},

@@ -515,7 +515,6 @@ textendash	0x2013	microtex	Ordinary	0	0	3	cmr10	123	latin/cmr10.ttf
 texteuro	0xE068	pua	Ordinary	0	0	3	special	101	maths/special.ttf	
 textfractionsolidus	0x002F	microtex	Ordinary	0	0	3	cmr10	47	latin/cmr10.ttf	
 textminus	0x2010	microtex	Ordinary	0	0	3	cmr10	45	latin/cmr10.ttf	
-textmu	0x00B5	microtex	Ordinary	0	0	3	special	109	maths/special.ttf	
 textnormaldot	0x002E	microtex	Punctuation	0	0	3	cmmi10_unchanged	58	base/cmmi10.ttf	
 textpercent	0xE069	pua	Ordinary	0	0	3	cmr10	37	latin/cmr10.ttf	
 textpertenthousand	0x2031	microtex	Ordinary	0	0	3	r10	38	latin/r10.ttf	
