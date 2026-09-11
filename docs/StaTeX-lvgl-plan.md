@@ -11,13 +11,20 @@ Everything below was checked against the **v9.5.0** tag rather than recalled.
 
 ## What StaTeX has to grow
 
-Two additions, both required by the `lv_font_t` integration *and* by any
-scrolling transcript:
+*(Phase 1 is done — see below for what it actually turned out to be.)*
 
+Glyph **metrics** needed nothing: `GlyphRecord` already carries advance,
+bearing, height, depth and italic in 1/256 em, and layout reads them through
+`emUnits` at 19 sites without touching the sampler. What was missing was
+smaller and more specific:
+
+- **`glyphCoverageSize()`** — the bitmap-box arithmetic, which was duplicated
+  verbatim between the sampler and layout's budget check, and which a font
+  backend needs as a third caller. Now one inline beside `emUnits`.
 - **`Renderer::measure()`** — extents after layout, never entering the draw
-  walk. `RenderStats` is already computed from the box-tree root before
-  `drawTree` runs, so this is small. ~6% of the cost of a full render.
-- **A glyph-metrics query** that does not sample the SDF, for `get_glyph_dsc`.
+  walk. Measured: **flat at ~1.8 µs regardless of em**, against 21.6 µs to
+  render at em=18 and 233.8 µs at em=64. So 8% of a render at small sizes and
+  under 1% at large ones.
 
 The trap that makes these necessary rather than convenient: `drawTree` calls
 `renderGlyphCoverage` *before* `blendCoverage`, so measuring by rendering into
@@ -68,13 +75,20 @@ transmitted.
 
 ## Phases
 
-### Phase 1 — measurement API
+### Phase 1 — measurement API ✅ done
 
-- `Renderer::measure()`; glyph-metrics query.
-- Fix the Teensy demo's two-pass render to use it.
+- `glyphCoverageSize()` in `statex_glyphstore.h`, replacing the duplicate in
+  `statex_sdf.cpp` and `statex_layout.cpp`.
+- `Renderer::measure()`, with `buildLayout()` factored out as the shared prefix
+  of it and `render()`.
+- The Teensy demo's measuring pass uses it; `NullGraphics` deleted.
+- Four tests in `tests/unit/test_render`: extents agree with `render()` at
+  three sizes, arena peak is strictly lower, refusals agree, and it is
+  reentrant.
 
-**Verify:** `ctest` unchanged (22/23, only the known-red oracle gate). Teensy
-image rebuilds; measure the render-time drop from not sampling twice.
+**Verified:** coverage output byte-identical over the 53 M-pixel sweep, so the
+extraction moved no pixels. Suite 22/23 (only the known-red oracle gate).
+Firmware unchanged at 489,824 / 14,016 / 113,344.
 
 ### Phase 2 — the A8 coverage backend, with **no LVGL at all**
 
