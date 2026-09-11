@@ -44,6 +44,7 @@ happens to be, which does.
 ## The layers
 
 ```
+lib/glyphstore/   the typeface. SDF atlas, glyph records, font params, sampler.
 lib/StaTeX/       portable core. Declares Graphics2D. Knows nothing below it.
 drivers/          hardware we drive. Knows nothing about the application.
 backends/         Graphics2D implementations. The ONLY layer that knows both.
@@ -51,13 +52,38 @@ targets/<board>/  pins, clocks, linker script, main().
 vendor/           third-party SDKs, verbatim, never edited.
 ```
 
-Dependencies point one way. `lib/StaTeX` includes nothing from the others;
-`drivers/` includes nothing from `lib/StaTeX`.
+Dependencies point one way. `lib/glyphstore` includes nothing at all -- its
+compiled archive has **zero** undefined symbols, not even libc. `lib/StaTeX`
+includes the glyph store and nothing else; `drivers/` includes nothing from
+either.
+
+### Why the glyph store is its own library
+
+The font is data plus one sampler, and nothing about it needs a parser. Keeping
+it separate buys two things:
+
+- **A font adapter can link the glyphs alone.** An `lv_font_t` backend wants
+  glyph metrics and a coverage bitmap; it has no use for TeX layout, and
+  dragging the renderer in to get a bitmap would be absurd.
+- **Swapping the typeface is a change to one directory.** The atlas is
+  generated (`tools/genfont/`); the boundary is what stops that generated data
+  from growing tendrils into the layout code.
+
+The line between the two is *semantics*: `glyphstore_types.h` holds the integer
+aliases, `c32` and `Face` -- what a font needs to describe itself. Everything
+that interprets those is StaTeX: `defaultMathFace` ("letters are italic in math
+mode"), `mathModeGlyph` ("`-` is U+2212, not a hyphen"), `Handle`, `Span`.
+
+One wart, recorded rather than hidden: `statex_fontparams.h` moved whole, and
+four of its fields (`scriptSpacePx`, `nullDelimiter`, `matrixColGap`,
+`matrixRowGap`) are layout constants rather than font dimensions. Its own
+comment already says so. Splitting the struct means re-cutting a positional
+aggregate initialiser for no benefit today.
 
 ## Two stacks, no shared middle
 
 ```
-                 lib/StaTeX ──uses──▶ Graphics2D          the one portable seam
+ lib/glyphstore ──▶ lib/StaTeX ──uses──▶ Graphics2D      the one portable seam
                                        ▲          ▲
                         ┌──────────────┘          └──────────────┐
           backends/ili9488                              backends/ltdc

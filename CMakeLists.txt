@@ -59,13 +59,27 @@ else()
 endif()
 
 # ---------------------------------------------------------------------------
+# Glyph store: the typeface. SDF atlas, glyph records, font parameters and the
+# sampler -- no parser, no layout, no renderer. It is a separate library so a
+# font adapter (an lv_font_t, say) can link the glyphs alone, and so that
+# swapping the font is a change to one directory.
+# ---------------------------------------------------------------------------
+file(GLOB GLYPHSTORE_SOURCES CONFIGURE_DEPENDS "${CMAKE_CURRENT_SOURCE_DIR}/lib/glyphstore/*.cpp")
+
+add_library(glyphstore STATIC ${GLYPHSTORE_SOURCES})
+target_include_directories(glyphstore PUBLIC "${CMAKE_CURRENT_SOURCE_DIR}/lib/glyphstore")
+target_link_libraries(glyphstore PRIVATE statex_warnings statex_safety)
+
+# ---------------------------------------------------------------------------
 # StaTeX core
 # ---------------------------------------------------------------------------
 file(GLOB STATEX_SOURCES CONFIGURE_DEPENDS "${CMAKE_CURRENT_SOURCE_DIR}/lib/StaTeX/*.cpp")
 
 add_library(statex STATIC ${STATEX_SOURCES})
 target_include_directories(statex PUBLIC "${CMAKE_CURRENT_SOURCE_DIR}/lib/StaTeX")
-target_link_libraries(statex PRIVATE statex_warnings statex_safety)
+# PUBLIC: statex_types.h includes glyphstore_types.h, so every consumer of
+# StaTeX needs the glyph store's include path and its symbols.
+target_link_libraries(statex PUBLIC glyphstore PRIVATE statex_warnings statex_safety)
 # statex_safety is INTERFACE-propagated to consumers of the *core* only where
 # they ask for it; the tests deliberately build with exceptions so they can
 # host the oracle.

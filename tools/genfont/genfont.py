@@ -4,7 +4,7 @@
 Rasterizes glyphs with Pillow's bundled FreeType, computes a signed distance
 field per glyph (scipy), downsamples + encodes to 8-bit, derives em-normalized
 metrics, and emits a constexpr C++ glyph store (statex_glyphs.gen.cpp) matching
-lib/StaTeX/statex_glyphstore.h.
+lib/glyphstore/statex_glyphstore.h.
 
 Env note: needs Pillow, numpy, scipy (all present in the project's Python).
 freetype-py is NOT required — Pillow bundles FreeType. Source fonts are taken
@@ -140,7 +140,7 @@ def cm_font(name, render_px):
     return _font_cache[key]
 
 
-# Must match kFirstPieceVariant in lib/StaTeX/statex_glyphstore.h.
+# Must match kFirstPieceVariant in lib/glyphstore/statex_glyphstore.h.
 PIECE_TOP, PIECE_REPEAT, PIECE_BOTTOM = 8, 9, 10
 
 VARIANTS = {
@@ -371,7 +371,7 @@ def make_sdf(font, ch, render_px, pad_px, max_sdf, spread_em):
 def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("--out", default=os.path.join(
-        os.path.dirname(__file__), "..", "..", "lib", "StaTeX",
+        os.path.dirname(__file__), "..", "..", "lib", "glyphstore",
         "statex_glyphs.gen.cpp"))
     ap.add_argument("--render", type=int, default=256)
     ap.add_argument("--max-sdf", type=int, default=48)

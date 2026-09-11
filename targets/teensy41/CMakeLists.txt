@@ -67,11 +67,20 @@ add_library(teensycore STATIC ${TEENSY_CORE_SRC} "${TEENSY_SPI}/SPI.cpp")
 target_include_directories(teensycore PUBLIC "${TEENSY_CORE}" "${TEENSY_SPI}")
 target_compile_options(teensycore PRIVATE -w)  # vendored: not our warnings
 
+# --- glyph store ------------------------------------------------------------
+# The typeface on its own: atlas, records, font params, sampler. Links nothing
+# from StaTeX, so a font adapter can consume it without the parser or layout.
+file(GLOB GLYPHSTORE_SRC CONFIGURE_DEPENDS "${REPO_ROOT}/lib/glyphstore/*.cpp")
+add_library(glyphstore STATIC ${GLYPHSTORE_SRC})
+target_include_directories(glyphstore PUBLIC "${REPO_ROOT}/lib/glyphstore")
+target_link_libraries(glyphstore PUBLIC teensycore)
+
 # --- StaTeX core ------------------------------------------------------------
 file(GLOB STATEX_SRC CONFIGURE_DEPENDS "${REPO_ROOT}/lib/StaTeX/*.cpp")
 add_library(statex STATIC ${STATEX_SRC})
 target_include_directories(statex PUBLIC "${REPO_ROOT}/lib/StaTeX")
-target_link_libraries(statex PUBLIC teensycore)
+# PUBLIC: statex_types.h includes glyphstore_types.h.
+target_link_libraries(statex PUBLIC glyphstore teensycore)
 
 # --- display driver ---------------------------------------------------------
 # Peripheral-specific, MCU-agnostic: it talks to a drivers::DisplayBus, which

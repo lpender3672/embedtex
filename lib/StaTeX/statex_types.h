@@ -1,31 +1,16 @@
 #ifndef STATEX_TYPES_H
 #define STATEX_TYPES_H
 
-// Fixed-width integer aliases and core value types for StaTeX.
-// No heap, no exceptions, no RTTI, no STL — see docs/StaTeX-requirements.md.
+// TeX semantics over the shared primitives: how a character behaves in math
+// mode, plus the handle and span types the node store is built from.
+// No heap, no exceptions, no RTTI, no STL -- see docs/StaTeX-requirements.md.
+//
+// The integer aliases, c32 and Face live one layer down in lib/glyphstore, so
+// the font can be built and linked without the parser or layout.
 
-#include <cstdint>
-#include <cstddef>
+#include "glyphstore_types.h"
 
 namespace statex {
-
-using u8 = std::uint8_t;
-using u16 = std::uint16_t;
-using u32 = std::uint32_t;
-using i8 = std::int8_t;
-using i16 = std::int16_t;
-using i32 = std::int32_t;
-using c32 = char32_t;
-
-/** Type face (STX-FNT-05). Lives here so nodes, the glyph store, layout, and
- *  draw can all share it without coupling. */
-enum class Face : u8 {
-  Roman = 0,
-  Italic = 1,
-  Bold = 2,
-  Symbol = 3,
-  Blackboard = 4,
-};
 
 /**
  * The face TeX's default math alphabet gives a character: letters are math

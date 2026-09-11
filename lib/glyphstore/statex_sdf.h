@@ -2,7 +2,7 @@
 #define STATEX_SDF_H
 
 #include "statex_glyphstore.h"
-#include "statex_types.h"
+#include "glyphstore_types.h"
 
 namespace statex {
 

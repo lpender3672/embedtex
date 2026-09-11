@@ -895,8 +895,6 @@ LayoutResult Layout::run(Handle rootAtom) {
   }
   for (u16 i = 0; i < nc; ++i) boxOf[i] = NO_NODE;
 
-  const FontParams& p = fontParams();
-
   u32 sp = 0;
   // A formula starts in display style, which is what MicroTeX's default
   // Environment uses and therefore what the differential compares against.

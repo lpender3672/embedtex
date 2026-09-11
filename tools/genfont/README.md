@@ -11,7 +11,7 @@ TTF --Pillow/FreeType--> high-res glyph raster
     --scipy distance_transform_edt--> signed distance field (render px)
     --downsample + encode--> 8-bit SDF (128 = contour)
     --Pillow metrics--> em-normalized advance/bearing/height/depth/italic
-    --emit--> lib/StaTeX/statex_glyphs.gen.cpp  (matches statex_glyphstore.h)
+    --emit--> lib/glyphstore/statex_glyphs.gen.cpp  (matches statex_glyphstore.h)
 ```
 
 ## Environment (the quirks, resolved)
@@ -35,7 +35,7 @@ TTF --Pillow/FreeType--> high-res glyph raster
 ## Run
 
 ```sh
-python tools/genfont/genfont.py            # writes lib/StaTeX/statex_glyphs.gen.cpp
+python tools/genfont/genfont.py            # writes lib/glyphstore/statex_glyphs.gen.cpp
 python tools/genfont/genfont.py --render 256 --max-sdf 48 --pad 24 --spread-store 6
 ```
 
@@ -50,7 +50,7 @@ sanity. Re-run it after regenerating.
 
 ## Consuming the output
 
-`lib/StaTeX/statex_glyphstore.h` declares the format and accessors
+`lib/glyphstore/statex_glyphstore.h` declares the format and accessors
 (`findGlyphRecord`, `glyphSdfData`, `glyphSdfSpread`, `glyphEmPx`). The next
 phases (FNT-02 SDF sampler, FNT-03 antialiasing, metric-driven layout) read
 from these — not yet wired into the render path.

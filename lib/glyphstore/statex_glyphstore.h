@@ -1,7 +1,7 @@
 #ifndef STATEX_GLYPHSTORE_H
 #define STATEX_GLYPHSTORE_H
 
-#include "statex_types.h"
+#include "glyphstore_types.h"
 
 // Place large generated glyph tables in flash, not RAM. The Teensy XIP linker
 // script routes the `.progmem` section to FLASH but copies plain `.rodata`
@@ -15,7 +15,7 @@
 
 namespace statex {
 
-// Face is defined in statex_types.h.
+// Face is defined in glyphstore_types.h.
 
 /**
  * A flash glyph record (STX-FNT-01). Generated offline (STX-FNT-04) by
@@ -136,9 +136,10 @@ const GlyphRecord* findLargestGlyphVariant(Face face, c32 cp);
  *
  * This is TeX's rule for growing a radical or a delimiter: walk the chain of
  * purpose-cut designs and take the first that is big enough, rather than
- * scaling one design up. Returning the largest on overflow is deliberate --
- * TeX would assemble an extensible recipe at that point, which StaTeX does not
- * do yet, and the biggest real glyph is a better answer than a distorted one.
+ * scaling one design up. Returning the largest on overflow is deliberate: it
+ * is the caller's cue to assemble an extensible recipe instead, which
+ * Layout::makeExtensibleDelimiter does from the kPiece* variants. A distorted
+ * glyph is never the right answer, so this never scales one.
  */
 const GlyphRecord* findGlyphVariantAtLeast(Face face, c32 cp, i16 minTotalEm);
 
