@@ -89,9 +89,49 @@ target_include_directories(backend_ili9488 INTERFACE
     "${REPO_ROOT}/backends/ili9488")
 target_link_libraries(backend_ili9488 INTERFACE statex ili9488)
 
+# --- A8 coverage backend ----------------------------------------------------
+# Knows lib/StaTeX and a byte grid, nothing else. The host suites hold it to
+# byte-equality with the image path, so what LVGL displays is what the oracle
+# validated.
+add_library(statex_a8 STATIC "${REPO_ROOT}/backends/statex_a8/statex_a8.cpp")
+target_include_directories(statex_a8 PUBLIC "${REPO_ROOT}/backends/statex_a8")
+target_link_libraries(statex_a8 PUBLIC statex)
+
+# --- LVGL -------------------------------------------------------------------
+# Cache variables must be set BEFORE add_subdirectory: env_support/cmake/
+# os_desktop.cmake reads them at include time. Note the v9.5 spelling --
+# LV_BUILD_CONF_PATH, not LV_CONF_PATH, from which LVGL derives the LV_CONF_PATH
+# compiler define. The pre-9.3 recipe is silently ignored and you get a build
+# against every LVGL default with no error.
+set(LV_BUILD_CONF_PATH "${CMAKE_CURRENT_SOURCE_DIR}/lv_conf.h" CACHE PATH "" FORCE)
+
+# Examples and demos are removed at vendoring time; LVGL auto-detects that, but
+# saying so survives a re-vendor. ThorVG must be off or its source glob is empty
+# and add_library() is a hard configure error.
+set(CONFIG_LV_BUILD_EXAMPLES      OFF CACHE BOOL "" FORCE)
+set(CONFIG_LV_BUILD_DEMOS         OFF CACHE BOOL "" FORCE)
+set(CONFIG_LV_USE_THORVG_INTERNAL OFF CACHE BOOL "" FORCE)
+set(LV_BUILD_SET_CONFIG_OPTS      OFF CACHE BOOL "" FORCE)
+set(BUILD_SHARED_LIBS             OFF CACHE BOOL "" FORCE)
+
+# Added AFTER add_compile_options above, so LVGL inherits the Cortex-M7 arch
+# flags. vendor/lvgl is outside this tree, so the binary-dir argument is
+# mandatory.
+add_subdirectory("${REPO_ROOT}/vendor/lvgl" "${CMAKE_BINARY_DIR}/lvgl")
+target_compile_options(lvgl PRIVATE -w)  # vendored: not our warnings
+
+# --- LVGL display backend ---------------------------------------------------
+# Knows LVGL and drivers/ili9488, nothing about this board.
+add_library(backend_lvgl STATIC
+    "${REPO_ROOT}/backends/lvgl_ili9488/lv_disp_ili9488.cpp")
+target_include_directories(backend_lvgl PUBLIC
+    "${REPO_ROOT}/backends/lvgl_ili9488")
+target_link_libraries(backend_lvgl PUBLIC lvgl ili9488)
+
 # --- firmware ---------------------------------------------------------------
 add_executable(firmware src/main.cpp)
-target_link_libraries(firmware PRIVATE backend_ili9488 teensycore)
+target_link_libraries(firmware PRIVATE
+    backend_ili9488 backend_lvgl statex_a8 lvgl teensycore)
 
 set(LINKER_SCRIPT "${CMAKE_CURRENT_SOURCE_DIR}/imxrt1062_t41_xip.ld")
 target_link_options(firmware PRIVATE

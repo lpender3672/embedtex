@@ -196,4 +196,12 @@ void Ili9488::blitCoverage(int x, int y, int w, int h, const uint8_t* cov,
   _bus.endTransaction();
 }
 
+void Ili9488::blitRgb888(int x, int y, int w, int h, const uint8_t* rgb) {
+  if (w <= 0 || h <= 0 || rgb == nullptr) return;
+  _bus.beginTransaction();
+  setAddrWindow(x, y, w, h);
+  _bus.write(rgb, static_cast<size_t>(w) * static_cast<size_t>(h) * 3);
+  _bus.endTransaction();
+}
+
 }  // namespace drivers

@@ -1,42 +1,56 @@
-// StaTeX on Teensy 4.1: parse + lay out + draw several math formulas to a TFT,
-// using a single static scratch arena and the flash glyph atlas. No heap, no
-// exceptions, no RTTI, no runtime font/SD access on the render path.
+// StaTeX under LVGL on a Teensy 4.1 driving a 320x480 ILI9488.
 //
-// Each line is laid out twice: once against a Graphics2D that discards its
-// output, purely to learn the line's width/height/depth, and once for real at
-// the baseline that measurement implies. Renders are self-contained
-// (STX-API-02), so measuring costs nothing but time and the second pass is
-// guaranteed to place what the first one measured.
+// Formulas are rendered once into A8 coverage buffers and handed to LVGL as
+// images. LVGL colours them via img_recolor -- LV_COLOR_FORMAT_A8 is documented
+// as being for exactly this, font-like bitmaps that are one colour -- and
+// composites and scrolls them from then on. Nothing re-rasterises on a scroll.
+//
+// Each formula is measured first (parse and layout only, no sampler) so its
+// buffer can be sized before anything is drawn into it.
 #include <Arduino.h>
 #undef PI
 
+#include <string.h>
+
 #include "ili9488.h"
-#include "ili9488_graphics.h"
+#include "lv_disp_ili9488.h"
+#include "lvgl.h"
+#include "statex_a8.h"
 #include "statex_render.h"
 #include "teensy_bus.h"
 
 using namespace statex;
 
+// --- hardware ---------------------------------------------------------------
 static teensy41::TeensySpiBus g_bus;
-static drivers::Ili9488 panel(g_bus);
+static drivers::Ili9488 g_panel(g_bus);
 
-// The one and only working memory for rendering (STX-MEM-02). Sized once here;
-// if a formula doesn't fit, render() refuses gracefully (STX-MEM-03). The
-// corpus below peaks at ~42 KB.
+// --- StaTeX -----------------------------------------------------------------
+// The one and only working memory for rendering (STX-MEM-02).
 static uint8_t g_scratch[96 * 1024];
 static Renderer g_renderer(g_scratch, sizeof(g_scratch));
 
-static const float kSizePx = 18.0f;
-static const float kOriginX = 8.0f;
-static const float kLineGap = 6.0f;
+static const float kEmPx = 18.0f;
 
-/** Swallows every primitive: used for the measuring pass. */
-class NullGraphics : public Graphics2D {
- public:
-  void blendCoverage(int, int, int, int, const u8*) override {}
-  void drawRule(float, float, float, float) override {}
-};
+// --- LVGL memory ------------------------------------------------------------
+// Both buffers live in RAM2 (.dmabuffers). DTCM is 480 KB and StaTeX's scratch
+// already takes 96 KB of it. Note .dmabuffers is NOLOAD and startup.c clears
+// only _sbss.._ebss, so nothing here is zeroed at boot -- memset before use.
+static const int kFlushRows = 32;  // ~1/10 screen, LVGL's guidance
+DMAMEM __attribute__((aligned(32)))
+static uint8_t g_lv_draw_buf[480 * kFlushRows * 3];
 
+// One A8 buffer per formula. 1 byte/px, against 2-4 for a colour canvas.
+static const int kFormulaCount = 4;
+static const int kA8W = 464;
+// Tall enough for the deepest formula here: the bracketed matrix measures
+// 111 px at an 18 px em, and 92 clipped 338 of its pixels on the panel.
+static const int kA8H = 128;
+DMAMEM __attribute__((aligned(4)))
+static uint8_t g_a8[kFormulaCount][kA8W * kA8H];
+static lv_draw_buf_t g_a8_buf[kFormulaCount];
+
+// --- content ----------------------------------------------------------------
 struct Formula {
   const c32* tex;
   int len;
@@ -45,9 +59,8 @@ struct Formula {
 #define TEX_LINE(lit) \
   Formula { lit, static_cast<int>(sizeof(lit) / sizeof(c32)) - 1 }
 
-// Only the closed command set (STX-LNG-02): \frac, \sqrt, the four \math*
-// faces, bmatrix, and the symbols carried in the flash table.
-static const Formula kLines[] = {
+// Only the closed command set (STX-LNG-02).
+static const Formula kLines[kFormulaCount] = {
     // eta(2) = pi^2/12 = (1/2) zeta(2)
     TEX_LINE(U"\\sum_{n=1}^{\\infty}\\frac{(-1)^{n+1}}{n^{2}}"
              U"=\\frac{\\pi^{2}}{12}"
@@ -67,53 +80,113 @@ static const Formula kLines[] = {
              U"\\end{bmatrix}"),
 };
 
-static const int kLineCount =
-    static_cast<int>(sizeof(kLines) / sizeof(kLines[0]));
+/**
+ * Render one formula into its A8 buffer and return an lv_image showing it,
+ * or nullptr if StaTeX refused.
+ */
+static lv_obj_t* makeFormula(lv_obj_t* parent, int i) {
+  RenderStats st{};
+  ParseError e =
+      g_renderer.measure(kLines[i].tex, kLines[i].len, kEmPx, &st);
+  if (e != ParseError::Ok) {
+    Serial.printf("line %d refused at measure, code=%d\n", i + 1, (int)e);
+    return nullptr;
+  }
+
+  const int pad = 4;
+  int w = static_cast<int>(st.width) + 2 * pad;
+  int h = static_cast<int>(st.height + st.depth) + 2 * pad;
+  if (w > kA8W) w = kA8W;
+  if (h > kA8H) h = kA8H;
+
+  memset(g_a8[i], 0, sizeof(g_a8[i]));
+  backends::CoverageGraphics g(g_a8[i], w, h, w);
+  e = g_renderer.render(kLines[i].tex, kLines[i].len, kEmPx,
+                        static_cast<float>(pad), st.height + pad, g);
+  if (e != ParseError::Ok) {
+    Serial.printf("line %d refused at draw, code=%d\n", i + 1, (int)e);
+    return nullptr;
+  }
+  if (g.clipped() != 0) {
+    Serial.printf("line %d: %ld px clipped by its A8 buffer\n", i + 1,
+                  g.clipped());
+  }
+
+  // Built at runtime rather than with LV_DRAW_BUF_DEFINE_STATIC, whose
+  // designated initialisers on a bitfield struct are a GCC extension in C++.
+  // lv_draw_buf_init sets header.flags = 0, so set_flag afterwards is
+  // required, not decorative. It also does not align for you -- hence the
+  // aligned attribute on g_a8.
+  lv_draw_buf_init(&g_a8_buf[i], static_cast<uint32_t>(w),
+                   static_cast<uint32_t>(h), LV_COLOR_FORMAT_A8,
+                   static_cast<uint32_t>(w), g_a8[i],
+                   static_cast<uint32_t>(w * h));
+  lv_draw_buf_set_flag(&g_a8_buf[i], LV_IMAGE_FLAGS_MODIFIABLE);
+
+  lv_obj_t* img = lv_image_create(parent);
+  lv_image_set_src(img, &g_a8_buf[i]);
+  lv_obj_set_style_image_recolor(img, lv_color_hex(0xFFFFFF), LV_PART_MAIN);
+  lv_obj_set_style_image_recolor_opa(img, LV_OPA_COVER, LV_PART_MAIN);
+  return img;
+}
+
+static void buildUi() {
+  lv_obj_t* scr = lv_screen_active();
+  lv_obj_set_style_bg_color(scr, lv_color_hex(0x000000), LV_PART_MAIN);
+  lv_obj_set_style_bg_opa(scr, LV_OPA_COVER, LV_PART_MAIN);
+
+  // A scrolling column: the formulas are taller than the panel, so this is the
+  // case the A8 design exists for -- scrolling composites cached coverage and
+  // re-rasterises nothing.
+  lv_obj_t* col = lv_obj_create(scr);
+  lv_obj_set_size(col, LV_PCT(100), LV_PCT(100));
+  lv_obj_set_style_bg_color(col, lv_color_hex(0x000000), LV_PART_MAIN);
+  lv_obj_set_style_bg_opa(col, LV_OPA_COVER, LV_PART_MAIN);
+  lv_obj_set_style_border_width(col, 0, LV_PART_MAIN);
+  lv_obj_set_style_pad_all(col, 6, LV_PART_MAIN);
+  lv_obj_set_flex_flow(col, LV_FLEX_FLOW_COLUMN);
+  lv_obj_set_style_pad_row(col, 8, LV_PART_MAIN);
+  lv_obj_set_scroll_dir(col, LV_DIR_VER);
+
+  for (int i = 0; i < kFormulaCount; ++i) makeFormula(col, i);
+}
 
 void setup() {
   Serial.begin(115200);
 
+  // Hardware first: the very first lv_timer_handler() can flush immediately.
   g_bus.begin();
-  panel.begin();
-  panel.setRotation(1);
-  panel.fillScreen(0x000000);
+  g_panel.begin();
+  g_panel.setRotation(1);  // 480x320; LVGL must never rotate in software
+  g_panel.fillScreen(0x000000);
 
-  // Pass 1: measure. A refusal here drops the line from the stack, so the
-  // remaining lines still centre correctly.
-  RenderStats st[kLineCount];
-  bool ok[kLineCount];
-  float total = 0.0f;
-  for (int i = 0; i < kLineCount; ++i) {
-    NullGraphics none;
-    st[i] = RenderStats{};
-    const ParseError e = g_renderer.render(kLines[i].tex, kLines[i].len,
-                                           kSizePx, kOriginX, 0.0f, none,
-                                           &st[i]);
-    ok[i] = (e == ParseError::Ok);
-    if (ok[i]) {
-      total += st[i].height + st[i].depth + kLineGap;
-    } else {
-      Serial.printf("line %d refused, code=%d\n", i + 1, static_cast<int>(e));
-    }
+  // lv_init before any other lv_* call: it runs lv_mem_init(), so the pool
+  // does not exist before this point.
+  lv_init();
+
+  // v9 has no LV_TICK_CUSTOM. millis is an exact match for uint32_t(*)(void),
+  // and using it avoids an ISR entirely -- which matters because with
+  // LV_OS_NONE nothing lv_* may be called from interrupt context.
+  lv_tick_set_cb(millis);
+
+  memset(g_lv_draw_buf, 0, sizeof(g_lv_draw_buf));
+  if (lvglport::lvDisplayCreateIli9488(g_panel, g_lv_draw_buf,
+                                       sizeof(g_lv_draw_buf)) == nullptr) {
+    Serial.println("lv_display_create failed");
+    return;
   }
-  if (total > 0.0f) total -= kLineGap;
 
-  // Pass 2: draw, stacked and centred vertically.
-  float y = (static_cast<float>(panel.height()) - total) * 0.5f;
-  if (y < 2.0f) y = 2.0f;
+  buildUi();
 
-  for (int i = 0; i < kLineCount; ++i) {
-    if (!ok[i]) continue;
-    backends::Ili9488Graphics g(panel, 0xFFFFFF);
-    const ParseError e =
-        g_renderer.render(kLines[i].tex, kLines[i].len, kSizePx, kOriginX,
-                          y + st[i].height, g);
-    if (e != ParseError::Ok) {
-      Serial.printf("line %d refused while drawing, code=%d\n", i + 1,
-                    static_cast<int>(e));
-    }
-    y += st[i].height + st[i].depth + kLineGap;
-  }
+  lv_mem_monitor_t mon;
+  lv_mem_monitor(&mon);
+  Serial.printf("lvgl heap: used=%u free=%u frag=%u%% max_used=%u\n",
+                (unsigned)(mon.total_size - mon.free_size),
+                (unsigned)mon.free_size, (unsigned)mon.frag_pct,
+                (unsigned)mon.max_used);
+  Serial.printf("statex arena high-water %lu of %u B\n",
+                (unsigned long)g_renderer.highWater(),
+                (unsigned)sizeof(g_scratch));
 }
 
-void loop() {}
+void loop() { lv_timer_handler_run_in_period(5); }

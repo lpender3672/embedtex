@@ -49,6 +49,23 @@ class Ili9488 {
   void blitCoverage(int x, int y, int w, int h, const uint8_t* cov,
                     uint32_t fg);
 
+  /**
+   * Stream a w*h block of packed 24-bit pixels, R,G,B per pixel, at (x, y).
+   *
+   * The panel keeps the top six bits of each byte and discards the low two, so
+   * no packing is needed here. One address window then one bus write -- no
+   * per-row loop and no scratch.
+   *
+   * This exists for a compositor that hands over a finished pixel block, which
+   * neither fillRect nor blitCoverage can accept. The contract stays in the
+   * panel's own terms (R, G, B); whatever byte order the caller's framebuffer
+   * uses is the caller's problem.
+   *
+   * Unclipped: the caller owns the block's placement. Passing a rectangle that
+   * leaves the panel sets an address window the controller does not define.
+   */
+  void blitRgb888(int x, int y, int w, int h, const uint8_t* rgb);
+
  private:
   void writeCommand(uint8_t c);
   void writeCommandData(uint8_t c, const uint8_t* data, size_t n);
