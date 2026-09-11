@@ -32,6 +32,16 @@ const SymbolEntry* findSymbol(const char* key, int len);
 /** Number of entries in the table (for tests / introspection). */
 int symbolCount();
 
+/**
+ * The `i`th entry in name order, or nullptr when `i` is out of range.
+ *
+ * Exists so a test can sweep the whole table -- every name must find itself,
+ * fit the parser's key buffer, and have a glyph -- without the test carrying a
+ * copy of the names, which is what made the old first/last assertions go stale
+ * the moment the table grew.
+ */
+const SymbolEntry* symbolAt(int i);
+
 }  // namespace statex
 
 #endif  // STATEX_SYMBOLS_H

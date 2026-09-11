@@ -35,6 +35,8 @@ import os
 import re
 import sys
 
+import tfm
+
 HERE = os.path.dirname(os.path.abspath(__file__))
 REPO = os.path.normpath(os.path.join(HERE, "..", ".."))
 RES = os.path.join(REPO, "lib", "MicroTeX", "res")
@@ -248,6 +250,23 @@ def main() -> int:
             continue
         if font_id not in fonts:
             dropped["fontId %d has no DEF_FONT" % font_id] += 1
+            continue
+        # A few delimiters have no single-glyph design at all: their metrics
+        # row declares zero height and zero depth and exists only to carry an
+        # EXTENSIONS recipe, so the glyph is always stacked from pieces.
+        # \lmoustache and \rmoustache are the whole of it. Rasterising their
+        # slot draws whatever else lives at that position in the shared TTF --
+        # which is how the advance cross-check found them. They need the
+        # \left/\right path rather than a glyph, so they wait for it.
+        font_name = fonts[font_id][0]
+        try:
+            m = tfm.get(font_name, slot)
+        except KeyError:
+            dropped["no metrics row"] += 1
+            continue
+        if m.height == 0 and m.depth == 0 and \
+                tfm.extensions(font_name).get(slot) is not None:
+            dropped["assembly-only, needs the delimiter path"] += 1
             continue
         rows[name] = dict(name=name, font_id=font_id, slot=slot,
                           atom=ATOM[at[0]], delim=at[1])

@@ -286,7 +286,6 @@ llcorner	0x231E	microtex	Opening	0	0	3	msam10	120	maths/msam10.ttf
 llfloor	0xE031	pua	Opening	0	0	3	stmary10	116	maths/stmary10.ttf	
 lll	0x22D8	unicode-math	Relation	0	0	3	msam10	110	maths/msam10.ttf	
 llparenthesis	0x2987	unicode-math	Opening	0	0	3	stmary10	108	maths/stmary10.ttf	
-lmoustache	0x23B0	microtex	Opening	0	1	3	moustache	64	base/cmex10.ttf	
 lnapprox	0x2A89	microtex	Relation	0	0	3	msbm10	189	maths/msbm10.ttf	
 lneq	0x2A87	microtex	Relation	0	0	3	msbm10	175	maths/msbm10.ttf	
 lneqq	0x2268	microtex	Relation	0	0	3	msbm10	169	maths/msbm10.ttf	
@@ -439,7 +438,6 @@ rightslice	0x2AA7	microtex	BinaryOp	0	0	3	stmary10	83	maths/stmary10.ttf
 rightsquigarrow	0x219D	microtex	Relation	0	0	3	msam10	195	maths/msam10.ttf	0x21DD
 rightthreetimes	0x22CC	microtex	BinaryOp	0	0	3	msam10	105	maths/msam10.ttf	
 risingdotseq	0x2253	microtex	Relation	0	0	3	msam10	58	maths/msam10.ttf	
-rmoustache	0x23B1	microtex	Closing	0	1	3	moustache	65	base/cmex10.ttf	
 rq	0xE052	pua	Ordinary	0	0	3	cmti10	39	latin/optional/cmti10.ttf	
 rrbracket	0x27E7	microtex	Closing	0	0	3	stmary10	107	maths/stmary10.ttf	
 rrceil	0xE053	pua	Closing	0	0	3	stmary10	119	maths/stmary10.ttf	

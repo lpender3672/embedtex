@@ -169,6 +169,44 @@ def truetype(path, px):
 
 _font_cache = {}
 
+# Emitted verbatim after the record table; see the comment at its call site.
+CANARY = """// Canary, the same idea statex_fontparams.h carries. The table above is
+// positional brace-init, so the field order in tools/genfont/genfont.py has to
+// match this struct exactly. Append a field on one side only and the last one
+// silently reads zero; insert one and every value after it shifts. Either way
+// the atlas still compiles and still looks plausible, and the error surfaces
+// as glyphs in the wrong places.
+//
+// kGlyphs itself cannot be asserted on -- it is `const` in a flash section,
+// not `constexpr`, so it is not a constant expression. A sentinel with a
+// distinct value per field does the job better anyway: it pins the order of
+// every field, not just the total size.
+constexpr GlyphRecord kFieldOrderCanary = {
+    1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15};
+static_assert(sizeof(GlyphRecord) == 32,
+              "GlyphRecord changed size. The generator emits its fields "
+              "positionally, so tools/genfont/genfont.py has to be updated to "
+              "match or every record after the new field is misaligned.");
+static_assert(kFieldOrderCanary.face == 1 && kFieldOrderCanary.sdfW == 2 &&
+                  kFieldOrderCanary.sdfH == 3 &&
+                  kFieldOrderCanary.variant == 4 &&
+                  kFieldOrderCanary.codepoint == 5 &&
+                  kFieldOrderCanary.sdfOffset == 6 &&
+                  kFieldOrderCanary.advance == 7 &&
+                  kFieldOrderCanary.bearingX == 8 &&
+                  kFieldOrderCanary.height == 9 &&
+                  kFieldOrderCanary.depth == 10 &&
+                  kFieldOrderCanary.italic == 11 &&
+                  kFieldOrderCanary.boxX == 12 && kFieldOrderCanary.boxY == 13 &&
+                  kFieldOrderCanary.boxW == 14 && kFieldOrderCanary.boxH == 15,
+              "GlyphRecord field order changed. The generator writes these "
+              "fields positionally in this order; update it to match, or every "
+              "record is built wrong.");
+
+"""
+
+
+
 
 def cm_font(name, render_px):
     """The vendored TTF for a TFM font name, or None if it is not one we ship."""
@@ -529,6 +567,13 @@ def main():
                 # 0.6667. Accept either reading before calling the slot wrong.
                 gap = min(abs(t.width - m["advance"]),
                           abs(t.width + t.italic - m["advance"]))
+                # A declared advance of exactly zero is not a width to check
+                # against -- it says the glyph is an overlay. TeX draws \not
+                # and \mapstochar on top of the symbol that follows, so they
+                # carry ink but move the pen nowhere, and comparing their
+                # raster width to zero would condemn seven correct slots.
+                if t.width == 0.0:
+                    gap = 0.0
                 if gap > TFM_SLOT_SANITY_EM:
                     raise SystemExit(
                         "%s U+%04X: %s slot %d has advance %.4f but the "
@@ -611,6 +656,14 @@ def main():
                         x=em_fixed(r["boxX"]), y=em_fixed(r["boxY"]),
                         bw=em_fixed(r["boxW"]), bh=em_fixed(r["boxH"])))
         f.write("};\n\n")
+        # The records above are positional brace-init, so the field order in
+        # this generator has to match the struct exactly. Appending a field on
+        # one side only leaves the last field zero-initialised, and inserting
+        # one shifts every value after it -- both silent, and both produce an
+        # atlas that looks plausible and measures wrong. statex_fontparams.h
+        # has carried a canary for this since a matrix test failed for no
+        # visible reason; GlyphRecord had none.
+        f.write(CANARY)
         f.write(f"constexpr int kCount = {len(records)};\n")
         f.write(f"constexpr int kSpread = {em_fixed(spread_em)};\n")
         f.write(f"constexpr int kEmPx = {args.render};\n\n")
@@ -697,12 +750,29 @@ const GlyphRecord* findLargestGlyphVariant(Face face, c32 cp) {
     print(f"  spread_em(1/256): {em_fixed(spread_em)}  em_px: {args.render}")
     if skipped:
         print(f"  skipped (blank/missing): {len(skipped)}")
-    # Self-checks.
-    assert records == sorted(records, key=lambda r: (r["face"], r["cp"]))
+    # Self-checks. Assertions rather than prose: this file is 1.5 MB of
+    # generated data and nobody is going to read it.
+    #
+    # The sort key matches the emit order exactly -- (face, cp, variant). It
+    # used to check only (face, cp), which is a weaker claim than the sort it
+    # was guarding and would pass with the variants of one symbol interleaved.
+    assert records == sorted(
+        records, key=lambda r: (r["face"], r["cp"], r["variant"]))
+    zero_advance = 0
     for r in records:
         assert 0 < r["w"] <= args.max_sdf and 0 < r["h"] <= args.max_sdf
         assert r["off"] + r["w"] * r["h"] <= len(sdf_blob)
-        assert r["advance"] > 0
+        # Zero is legitimate for an overlay: the negation slash and the
+        # mapstochar family draw on top of the symbol that follows and
+        # move the pen nowhere. Negative is not, and neither is a whole
+        # atlas of them.
+        assert r["advance"] >= 0
+        if r["advance"] == 0:
+            zero_advance += 1
+    assert zero_advance < len(records) // 10, (
+        "%d of %d glyphs have a zero advance; overlays are a handful, so this "
+        "is a metric lookup failing silently" % (zero_advance, len(records)))
+    print(f"  zero-advance overlays: {zero_advance}")
     print("  self-checks OK")
 
 
