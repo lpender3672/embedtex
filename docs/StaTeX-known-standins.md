@@ -79,12 +79,53 @@ harness — a layout change that doubled the sampling work would pass silently.
 
 ### genfont hygiene
 
-- `tools/genfont/README.md` is stale: it documents `C:\Windows\Fonts`, a
-  `STATEX_FONTDIR` override, a `--spread-store` flag and `getmask`, none of
-  which the script has. The pipeline description at the top is accurate; the
-  configuration half describes a version that no longer exists.
 - Python dependencies are undeclared. It needs Pillow, numpy and scipy and says
-  so only in a docstring. One `requirements.txt` would fix it.
+  so only in a docstring and the README. One `requirements.txt` would fix it.
+
+### Accents are excluded from the symbol suite
+
+Sixteen of MicroTeX's names are accents -- `\hat`, `\tilde`, `\vec`,
+`\widehat`. StaTeX has no accent machinery, and an accent added as an ordinary
+atom renders as a hat floating on the baseline at the wrong place, which is
+worse than not having it. They are dropped by `mksymbols.py`, so `\hat` fails
+with `UnknownCommand` rather than drawing something wrong.
+
+Adding them needs layout work, not glyphs: an accent is positioned over its
+argument's *skew* point, which is a per-glyph quantity `GlyphRecord` does not
+carry.
+
+### `\lmoustache` and `\rmoustache` need the delimiter path
+
+These two have no single-glyph design at all. Their metrics row declares zero
+height and zero depth and exists only to carry an extensible recipe, so TeX
+always stacks them from pieces. Rasterising their slot draws whatever else sits
+at that position in the shared TTF -- which is how the advance cross-check
+caught them.
+
+They are excluded until `\left` / `\right` exists, because a stretchy
+delimiter is the only context they appear in anyway.
+
+### 147 symbols use private-use codepoints
+
+StaTeX keys glyphs by `(Face, codepoint)`. MicroTeX's tables name a real
+Unicode codepoint for 410 of the 600 symbols and `unicode-math-table.tex` adds
+42; the rest have none, and 69 of those are stmaryrd, which largely predates
+any Unicode assignment. Those get `U+E000` upward, assigned in sorted-name
+order so the allocation is reproducible.
+
+This is safe because the codepoint is an internal lookup key and never leaves
+the repo -- `serialize()` is a test fixture (`statex_serialize.h`). It is worth
+knowing anyway: an LVGL label cannot address those glyphs by character, and
+`symbols.tsv` records unicode-math's value in a separate column wherever the
+two disagree, so switching later is a one-column edit.
+
+### The symbol table's name strings are in DTCM
+
+`kSymbols` itself is in `.progmem`, but the `const char*` names point at
+ordinary string literals, which land in `.rodata` and so in DTCM on this
+target -- about 6 KB. A flash string pool (one `char[]` plus offsets) would
+recover it, at the cost of changing `SymbolEntry`'s shape. Not worth doing
+until DTCM is actually tight.
 
 ---
 
@@ -109,10 +150,22 @@ is wrong, so the position test cannot see it and only the artifact can.
 | which face a test helper assumes | *negative* inter-atom glue reported |
 
 **Closed by construction.** Every face draws from the same Computer Modern file
-its metrics come from, and `TFM_SLOT` in genfont governs both. A face with no
-nominal font is a hard error unless every one of its glyphs is redirected.
-Nothing needs Latin Modern any more, so genfont no longer needs a MiKTeX
-install — which was the Phase 0 reproducibility blocker.
+its metrics come from, and one mapping governs both. A face with no nominal
+font is a hard error unless every one of its glyphs is redirected. Nothing
+needs Latin Modern any more, so genfont no longer needs a MiKTeX install —
+which was the Phase 0 reproducibility blocker.
+
+That mapping is now *derived* rather than transcribed: `tools/genfont/
+mksymbols.py` reads the font, slot and metrics table for every symbol out of
+MicroTeX's own tables and checks the join in as `symbols.tsv`. The six
+disagreements above were all cases of someone copying one half of a pair by
+hand, so removing the hand-copying removes the whole class.
+
+Two cross-checks catch what remains. The advance the TFM declares is compared
+against the advance the raster measures, and a gap beyond 0.20 em is a build
+error — that is a *different glyph*, so the slot is wrong. And every name in
+the symbol table must resolve to a glyph in the atlas, checked both by the
+generator and by `test_symbols.cpp` at runtime.
 
 When adding a glyph: **check the picture, not just the score.**
 
@@ -127,7 +180,7 @@ content drifting right by *half* the width difference.
 To left-align, wrap the child in a row of the container's full width so the
 centring is a no-op.
 
-### `FontParams` is positional brace-init
+### Positional brace-init, twice over
 
 C++17 has no designated initialisers, so removing a struct field without
 removing its initialiser (or the reverse) shifts every value after it and the
@@ -136,8 +189,15 @@ once while deleting `num3`; the only symptom was an unrelated-looking matrix
 test failing. There is now a `static_assert` that the last field is non-zero,
 which turns that silent failure into a build error.
 
-The same hazard applies to `GlyphRecord`, whose initialiser genfont emits
-positionally: **append fields only.**
+`GlyphRecord` has the same hazard — genfont emits its fifteen fields
+positionally — and now has a stronger guard: a sentinel record with a distinct
+value per field, asserted field by field, which pins the *order* of all of them
+rather than just catching a zero tail. `kGlyphs` itself cannot carry the
+assertion, because it lives in a flash section and so is `const` rather than
+`constexpr`, and a const array is not a constant expression.
+
+Still **append fields only**, and update `tools/genfont/genfont.py` in the same
+change.
 
 ### A test pinned to a magic number stops testing
 
