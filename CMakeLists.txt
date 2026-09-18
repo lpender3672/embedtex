@@ -95,6 +95,14 @@ target_include_directories(statex_a8 PUBLIC
   "${CMAKE_CURRENT_SOURCE_DIR}/backends/statex_a8")
 target_link_libraries(statex_a8 PUBLIC statex PRIVATE statex_warnings statex_safety)
 
+# RGB565 byte-grid with coverage thresholding, for palette-constrained
+# displays (memory-in-pixel). Toolkit-agnostic like statex_a8.
+add_library(statex_rgb565 STATIC
+  "${CMAKE_CURRENT_SOURCE_DIR}/backends/statex_rgb565/statex_rgb565.cpp")
+target_include_directories(statex_rgb565 PUBLIC
+  "${CMAKE_CURRENT_SOURCE_DIR}/backends/statex_rgb565")
+target_link_libraries(statex_rgb565 PUBLIC statex PRIVATE statex_warnings statex_safety)
+
 if(STATEX_BUILD_TESTS)
   enable_testing()
   add_subdirectory(tests)
