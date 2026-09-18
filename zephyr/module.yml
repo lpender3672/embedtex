@@ -1,0 +1,7 @@
+# Zephyr module definition: exposes the StaTeX core (lib/StaTeX +
+# lib/glyphstore) to Zephyr firmware builds as CONFIG_STATEX. Host-side
+# trees (tests/, vendor/, targets/, backends other than what firmware
+# enables) are not part of the module build.
+build:
+  cmake: zephyr
+  kconfig: zephyr/Kconfig

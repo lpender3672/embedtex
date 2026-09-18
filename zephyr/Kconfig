@@ -1,0 +1,12 @@
+config STATEX
+	bool "StaTeX maths typesetting"
+	depends on CPP
+	help
+	  Statically-allocated TeX maths renderer (lib/StaTeX) with its SDF
+	  glyph store (lib/glyphstore). No heap, no exceptions, no RTTI; the
+	  caller supplies a scratch arena and a Graphics2D backend.
+
+	  Requires C++17 (set CONFIG_STD_CPP17=y or newer in the
+	  application). The generated glyph atlas is a significant flash
+	  consumer; check the map file when enabling. Font subsetting is a
+	  table-generator concern, not a build option here (yet).
