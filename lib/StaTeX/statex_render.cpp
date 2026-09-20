@@ -65,7 +65,8 @@ ParseError Renderer::measure(const c32* src, int len, float sizePx,
 
 ParseError Renderer::render(const c32* src, int len, float sizePx,
                             float originX, float baseline, Graphics2D& g,
-                            RenderStats* stats, GlyphProbe* probe) {
+                            RenderStats* stats, GlyphProbe* probe,
+                            CaretPlacement* caret) {
   _arena.reset();  // self-contained: no residue from prior renders (STX-API-02)
 
   // Box store lives at the bottom of the arena: it must survive into the draw
@@ -88,7 +89,7 @@ ParseError Renderer::render(const c32* src, int len, float sizePx,
   }
 
   const bool drawn =
-      drawTree(_arena, boxes, rootBox, originX, baseline, g, probe);
+      drawTree(_arena, boxes, rootBox, originX, baseline, g, probe, caret);
   if (stats != nullptr) stats->highWater = _arena.highWater();
 
   if (!drawn) {

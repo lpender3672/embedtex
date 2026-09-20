@@ -13,6 +13,7 @@ enum class BoxKind : u8 {
   HList,  // horizontal list of children
   VList,  // vertical list of children (positioned by child shift)
   Rule,   // a filled rectangle (e.g. fraction bar)
+  Caret,  // zero-width edit cursor: draws nothing, reports its position
 };
 
 /**
@@ -49,6 +50,9 @@ class BoxStore {
   Handle makeChar(c32 ch, Face face, float emPx, float w, float h, float d,
                   u8 variant = 0);
   Handle makeRule(float w, float h, float d);
+  /** A zero-width cursor marker carrying its own height/depth for reporting.
+   * The draw walk records its position and paints nothing. */
+  Handle makeCaret(float h, float d);
   /** Build a list box with explicit metrics; copies child handles. */
   Handle makeList(BoxKind kind, const Handle* items, u16 count, float w,
                   float h, float d);

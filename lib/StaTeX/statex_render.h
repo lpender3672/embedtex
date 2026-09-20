@@ -50,10 +50,14 @@ class Renderer {
   // `probe`, when non-null, records where each glyph was placed. It is a
   // diagnostic for the differential oracle -- see GlyphProbe in statex_draw.h
   // -- and does not affect what is drawn.
+  // `caret`, when non-null, receives the placement of a `\caret` marker in the
+  // source (device coordinates) so a caller can draw an overlay edit cursor.
+  // The marker is zero-width and never affects layout or what is drawn.
   ParseError render(const c32* src, int len, float sizePx, float originX,
                     float baseline, Graphics2D& g,
                     RenderStats* stats = nullptr,
-                    GlyphProbe* probe = nullptr);
+                    GlyphProbe* probe = nullptr,
+                    CaretPlacement* caret = nullptr);
 
   /**
    * Extents only: parse and lay out, then stop. Nothing is drawn and no

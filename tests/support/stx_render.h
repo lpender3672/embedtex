@@ -52,6 +52,9 @@ struct RenderOutput {
   // contaminated by the two rasterisers disagreeing about ink.
   std::vector<statex::GlyphPlacement> placements;
   bool placementsTruncated = false;  // formula exceeded the probe's capacity
+
+  // Placement of a \caret marker, if the source contained one (device coords).
+  statex::CaretPlacement caret;
 };
 
 /** Canvas geometry shared by every render in the suite, so images line up. */

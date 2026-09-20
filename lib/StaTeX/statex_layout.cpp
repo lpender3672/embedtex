@@ -28,6 +28,13 @@ inline bool glyphFitsCoverage(const GlyphRecord& g, float emPx) {
 constexpr int kRowTmp = 256;
 constexpr int kMatMax = 64;
 
+// Edit-cursor extents, em-relative, so the caret auto-scales to its context
+// (a smaller em inside a numerator/script gives a shorter caret). Chosen to
+// span a typical ascender-to-descender so the bar reads as a full-height
+// cursor next to short glyphs.
+constexpr float kCaretHeight = 0.72f;
+constexpr float kCaretDepth = 0.20f;
+
 }  // namespace
 
 Layout::Layout(Arena& arena, const NodeStore& nodes, BoxStore& boxes,
@@ -78,6 +85,11 @@ Handle Layout::combine(Handle atom, const Node& n, const Handle* boxOf,
       }
       return bh;
     }
+
+    case Kind::Caret:
+      // Zero-width so it never shifts layout; carries height/depth only so the
+      // draw walk can report a cursor bar spanning this context's line.
+      return _boxes.makeCaret(kCaretHeight * size, kCaretDepth * size);
 
     case Kind::Row: {
       const u16 cnt = n.children.count;
@@ -149,9 +161,24 @@ Handle Layout::combine(Handle atom, const Node& n, const Handle* boxOf,
         if (!valid(cb)) return NO_NODE;
         const Box& b = _boxes.get(cb);
         W += b.width;
-        H = fmax2(H, b.height + b.shift);
-        D = fmax2(D, b.depth - b.shift);
+        // A caret is zero-width and must not grow the row: excluded from the
+        // extent so the formula's box depends only on real content. Its own
+        // reported height is fixed up below to match the line it sits on.
+        if (b.kind != BoxKind::Caret) {
+          H = fmax2(H, b.height + b.shift);
+          D = fmax2(D, b.depth - b.shift);
+        }
         tmp[out++] = cb;
+      }
+      // Give any caret in this row the row's line metrics, so the overlay
+      // cursor spans exactly this context's content (a shorter caret inside a
+      // numerator than at top level) — without having affected layout above.
+      for (u16 i = 0; i < out; ++i) {
+        Box& cb = _boxes.get(tmp[i]);
+        if (cb.kind == BoxKind::Caret && H > 0.0f) {
+          cb.height = H;
+          cb.depth = D;
+        }
       }
       return _boxes.makeList(BoxKind::HList, tmp, out, W, H, D);
     }

@@ -110,6 +110,9 @@ void dump(const NodeStore& s, Handle h, Writer& w, int depth) {
       dump(s, n.sqrt.base, w, depth + 1);
       w.put(')');
       break;
+    case Kind::Caret:
+      w.puts("<caret>");
+      break;
     case Kind::Matrix: {
       switch (n.matrix.env) {
         case MatrixEnv::Bracket: w.puts("(bmat["); break;
@@ -180,6 +183,9 @@ void dumpBox(const BoxStore& s, Handle h, Writer& w, int depth) {
       break;
     case BoxKind::Rule:
       w.put('R');
+      break;
+    case BoxKind::Caret:
+      w.put('|');
       break;
     case BoxKind::HList:
     case BoxKind::VList: {

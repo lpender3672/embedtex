@@ -73,6 +73,16 @@ Handle NodeStore::makeSqrt(Handle base, Handle index) {
   return h;
 }
 
+Handle NodeStore::makeCaret() {
+  if (!_ok || _count >= _cap) return NO_NODE;
+  const Handle h = _count++;
+  Node& n = _nodes[h];
+  n.kind = Kind::Caret;
+  n.takesLimits = false;
+  n.atomType = AtomType::Ordinary;
+  return h;
+}
+
 Handle NodeStore::makeRow(const Handle* items, u16 count) {
   if (!_ok || _count >= _cap) return NO_NODE;
   // All children must be valid (propagate prior exhaustion).

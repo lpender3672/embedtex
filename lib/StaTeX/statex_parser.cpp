@@ -274,6 +274,15 @@ int Parser::onCommand(const c32* src, int len, int i) {
     pushFrame(kSqrt, /*need=*/1, /*rule=*/false, NO_NODE);
     return i;
   }
+  if (nameIs("caret")) {
+    const Handle h = _store.makeCaret();
+    if (!valid(h)) {
+      fail(ParseError::OutOfMemory, start);
+      return i;
+    }
+    feedOperand(h);
+    return i;
+  }
   if (nameIs("begin")) return onBegin(src, len, i);
   if (nameIs("end")) return onEnd(src, len, i);
   if (nameIs("mathrm")) { onStyle(Face::Roman); return i; }

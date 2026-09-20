@@ -51,6 +51,16 @@ Handle BoxStore::makeRule(float w, float h, float d) {
   return bh;
 }
 
+Handle BoxStore::makeCaret(float h, float d) {
+  const Handle bh = make(BoxKind::Caret);
+  if (!valid(bh)) return NO_NODE;
+  Box& b = _boxes[bh];
+  b.width = 0.0f;  // zero advance: cannot shift anything in an HList
+  b.height = h;
+  b.depth = d;
+  return bh;
+}
+
 Handle BoxStore::makeList(BoxKind kind, const Handle* items, u16 count, float w,
                           float h, float d) {
   if (!_ok || _count >= _cap) return NO_NODE;

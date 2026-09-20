@@ -244,8 +244,63 @@ static void test_measure_is_reentrant() {
   TEST_ASSERT_FLOAT_WITHIN(0.0f, a.depth, b.depth);
 }
 
+// A \caret marker is zero-width: it must not change the formula's extents,
+// wherever it sits. This is the property the stable-layout cursor relies on.
+static void test_caret_does_not_change_layout() {
+  Renderer r(g_scratch, sizeof(g_scratch));
+  RecordingGraphics<512> rec;
+  RenderStats bare{}, withCaret{};
+  CaretPlacement cp;
+
+  const c32 plain[] = U"\\frac{1}{2}";
+  const c32 caretNum[] = U"\\frac{1\\caret}{2}";
+  TEST_ASSERT_EQUAL_INT(
+      (int)ParseError::Ok,
+      (int)r.render(plain, slen(plain), SIZE, 0, 100, rec, &bare));
+  TEST_ASSERT_EQUAL_INT((int)ParseError::Ok,
+                        (int)r.render(caretNum, slen(caretNum), SIZE, 0, 100,
+                                      rec, &withCaret, nullptr, &cp));
+
+  TEST_ASSERT_FLOAT_WITHIN(0.001f, bare.width, withCaret.width);
+  TEST_ASSERT_FLOAT_WITHIN(0.001f, bare.height, withCaret.height);
+  TEST_ASSERT_FLOAT_WITHIN(0.001f, bare.depth, withCaret.depth);
+}
+
+// The caret reports a plausible position inside the numerator it sits in.
+static void test_caret_reports_position() {
+  Renderer r(g_scratch, sizeof(g_scratch));
+  RecordingGraphics<512> rec;
+  RenderStats st{};
+  CaretPlacement cp;
+
+  const c32 src[] = U"\\frac{12\\caret}{2}";  // caret after "12" in numerator
+  TEST_ASSERT_EQUAL_INT(
+      (int)ParseError::Ok,
+      (int)r.render(src, slen(src), SIZE, 20, 100, rec, &st, nullptr, &cp));
+  TEST_ASSERT_TRUE(cp.found);
+  TEST_ASSERT_GREATER_THAN_FLOAT(20.0f, cp.x);          // past the origin
+  TEST_ASSERT_LESS_THAN_FLOAT(20.0f + st.width, cp.x);  // within the formula
+  TEST_ASSERT_GREATER_THAN_FLOAT(0.0f, cp.height);      // has a visible span
+  // Numerator sits above the main baseline, so the caret baseline is higher.
+  TEST_ASSERT_LESS_THAN_FLOAT(100.0f, cp.baseline);
+}
+
+// No \caret in the source: the probe stays empty and nothing is drawn for it.
+static void test_no_caret_reports_absent() {
+  Renderer r(g_scratch, sizeof(g_scratch));
+  RecordingGraphics<512> rec;
+  CaretPlacement cp;
+  TEST_ASSERT_EQUAL_INT(
+      (int)ParseError::Ok,
+      (int)r.render(U"x+1", 3, SIZE, 0, 100, rec, nullptr, nullptr, &cp));
+  TEST_ASSERT_FALSE(cp.found);
+}
+
 int main(int, char**) {
   UNITY_BEGIN();
+  RUN_TEST(test_caret_does_not_change_layout);
+  RUN_TEST(test_caret_reports_position);
+  RUN_TEST(test_no_caret_reports_absent);
   RUN_TEST(test_showcase_matrix_renders);
   RUN_TEST(test_default_caps_fit_device_scratch);
   RUN_TEST(test_end_to_end_ok);

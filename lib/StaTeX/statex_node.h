@@ -19,6 +19,7 @@ enum class Kind : u8 {
   Script,  // base with optional superscript and/or subscript
   Sqrt,    // radical with optional index
   Matrix,  // rows x cols grid of cells (bounded — STX-DAT-04)
+  Caret,   // zero-width edit cursor marker (\caret); reports position only
 };
 
 /** Matrix environment delimiter style. */
@@ -108,6 +109,9 @@ class NodeStore {
   Handle makeFrac(Handle num, Handle den, bool rule = true);
   Handle makeScript(Handle base, Handle sup, Handle sub);
   Handle makeSqrt(Handle base, Handle index = NO_NODE);
+  /** Zero-width edit-cursor marker (\caret): a leaf that occupies no space and
+   * only reports its post-layout position through the draw walk's CaretProbe. */
+  Handle makeCaret();
   /** Copies `count` child handles into the child buffer. */
   Handle makeRow(const Handle* items, u16 count);
   /** Builds a rows x cols matrix; copies row-major cell handles. */

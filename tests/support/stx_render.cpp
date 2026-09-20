@@ -56,10 +56,12 @@ RenderOutput renderStatex(const std::u32string& tex, const Canvas& canvas,
   GlyphProbe probe;
   probe.out = slots;
   probe.cap = static_cast<u16>(sizeof(slots) / sizeof(slots[0]));
+  CaretPlacement caret;
   out.error = renderer.render(tex.data(), static_cast<int>(tex.size()),
                               canvas.sizePx, canvas.originX, canvas.baseline,
-                              g, &stats, &probe);
+                              g, &stats, &probe, &caret);
   out.stats = stats;
+  out.caret = caret;
   out.placementsTruncated = probe.truncated();
   const u16 kept = probe.truncated() ? probe.cap : probe.count;
   out.placements.assign(slots, slots + kept);

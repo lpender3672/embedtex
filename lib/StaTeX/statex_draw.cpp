@@ -18,7 +18,8 @@ constexpr int kCovCap = kMaxGlyphCoveragePx;  // see statex_draw.h
 }  // namespace
 
 bool drawTree(Arena& arena, const BoxStore& boxes, Handle root, float x,
-              float baseline, Graphics2D& g, GlyphProbe* probe) {
+              float baseline, Graphics2D& g, GlyphProbe* probe,
+              CaretPlacement* caret) {
   if (!valid(root)) return false;
 
   const u32 cap = static_cast<u32>(boxes.count()) + 8u;
@@ -74,6 +75,18 @@ bool drawTree(Arena& arena, const BoxStore& boxes, Handle root, float x,
 
       case BoxKind::Rule:
         g.drawRule(it.x, it.baseline - b.height, b.width, b.height + b.depth);
+        break;
+
+      case BoxKind::Caret:
+        // Zero-width, paints nothing: record where an overlay cursor goes.
+        // First marker wins (there is only ever one in an edit line).
+        if (caret != nullptr && !caret->found) {
+          caret->found = true;
+          caret->x = it.x;
+          caret->baseline = it.baseline;
+          caret->height = b.height;
+          caret->depth = b.depth;
+        }
         break;
 
       case BoxKind::HList:

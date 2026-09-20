@@ -51,6 +51,21 @@ struct GlyphProbe {
 };
 
 /**
+ * Post-layout position of a `\caret` marker, in the caller's device
+ * coordinates. The marker is zero-width, so it cannot affect layout; this only
+ * reports where an overlay cursor bar should be drawn. `found` stays false when
+ * the formula contains no `\caret`. The bar spans [baseline - height, baseline
+ * + depth] at x.
+ */
+struct CaretPlacement {
+  bool found = false;
+  float x = 0.0f;
+  float baseline = 0.0f;
+  float height = 0.0f;
+  float depth = 0.0f;
+};
+
+/**
  * Walk a box tree and emit draw primitives to `g`, placing the root with its
  * baseline-left origin at (x, baseline). Iterative over an explicit work-stack
  * in the arena (STX-EXE-03) — no recursion proportional to box-tree depth.
@@ -59,10 +74,12 @@ struct GlyphProbe {
  * work-stack exhaustion (STX-MEM-03).
  *
  * `probe`, when non-null, receives one entry per glyph placed, in emission
- * order. It never changes what is drawn.
+ * order. `caret`, when non-null, receives the first `\caret` marker's placement.
+ * Neither changes what is drawn.
  */
 bool drawTree(Arena& arena, const BoxStore& boxes, Handle root, float x,
-              float baseline, Graphics2D& g, GlyphProbe* probe = nullptr);
+              float baseline, Graphics2D& g, GlyphProbe* probe = nullptr,
+              CaretPlacement* caret = nullptr);
 
 }  // namespace statex
 
